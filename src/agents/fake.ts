@@ -11,6 +11,8 @@
 //   note:     { to, text }                   call post_note
 //   review:   "approve" | "changes-once" | "changes"
 //   cost:     number                         reported USD per run (default 0.01)
+//   usage_limit: true | "first"              report a subscription usage limit (reset_ms later)
+//   usage_limit_node: "<node id>"            ...only on that teammate's node
 //   wait_inbox_ms: number                    poll the inbox for this long; writes what arrived to `inbox_file`
 //   inbox_file: "path"                       (inside the lease) where received messages are saved
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -29,6 +31,7 @@ const sleep = (ms: number, signal?: AbortSignal) =>
 export class FakeAdapter implements Adapter {
   name = "fake";
   private runs = new Map<string, number>();
+  constructor(private node = "") {}
 
   async run(req: AgentRequest): Promise<AgentResult> {
     const f = (req.fake ?? {}) as Record<string, any>;
@@ -61,6 +64,11 @@ export class FakeAdapter implements Adapter {
     if (f.sleep_ms) await sleep(Number(f.sleep_ms), req.signal);
     if (req.signal?.aborted) return done(false, "aborted", "aborted");
     if (f.fail === true || (f.fail === "first" && n === 1)) return done(false, "fake failure", "error");
+    const limitHere = !f.usage_limit_node || f.usage_limit_node === this.node;
+    if (limitHere && (f.usage_limit === true || (f.usage_limit === "first" && n === 1))) {
+      req.onEvent({ kind: "usage", usage: { status: "limited", window: "five_hour", resetsAt: Date.now() + Number(f.reset_ms ?? 60_000) } });
+      return { ...done(false, "You've hit your usage limit", "usage_limit"), resumeAt: Date.now() + Number(f.reset_ms ?? 60_000) };
+    }
     if (f.assume) await req.tools.record_assumption({ decision: String(f.assume), why: "fake adapter" });
     if (f.note) await req.tools.post_note(f.note);
     if (f.ask) await req.tools.ask(f.ask);

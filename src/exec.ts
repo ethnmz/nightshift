@@ -29,10 +29,28 @@ export const NONINTERACTIVE_ENV: Record<string, string> = {
   NO_COLOR: "1",
 };
 
-export function childEnv(extra: Record<string, string> = {}): Record<string, string> {
+export function childEnv(extra: Record<string, string> = {}, remove: string[] = []): Record<string, string> {
   const base: Record<string, string> = {};
-  for (const [k, v] of Object.entries(process.env)) if (v !== undefined) base[k] = v;
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !remove.includes(k)) base[k] = v;
   return { ...base, ...NONINTERACTIVE_ENV, ...extra };
+}
+
+/**
+ * Extra guard rails for agent processes (both Claude Code and Codex): git cannot push even if the
+ * agent tries (push URL points nowhere), and `gh` sees an empty config dir, so no stored GitHub token.
+ * Nightshift's own git/gh calls do not use this env.
+ */
+export function agentGuardEnv(emptyGhDir: string, remote = "origin"): Record<string, string> {
+  return {
+    GIT_CONFIG_COUNT: "2",
+    GIT_CONFIG_KEY_0: `remote.${remote}.pushurl`,
+    GIT_CONFIG_VALUE_0: "file:///nightshift/agents-cannot-push",
+    GIT_CONFIG_KEY_1: "push.default",
+    GIT_CONFIG_VALUE_1: "nothing",
+    GH_CONFIG_DIR: emptyGhDir,
+    GH_TOKEN: "",
+    GITHUB_TOKEN: "",
+  };
 }
 
 export interface RunResult {

@@ -6,7 +6,7 @@ const GROUPS: Record<string, string[]> = {
   all: [],
   talk: ["note", "ask", "answer"],
   decisions: ["assumption", "contract_change", "lease_request", "blocker"],
-  tasks: ["task_claimed", "task_done", "task_parked", "task_added"],
+  tasks: ["task_claimed", "task_done", "task_parked", "task_released", "task_added"],
   health: ["node_up", "node_down", "gate_passed", "gate_failed", "budget", "stop"],
 };
 

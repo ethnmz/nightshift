@@ -6,6 +6,13 @@ export interface NodeSpec {
   name: string;
   login?: string;
   lanes: string[];
+  agent?: "claude" | "codex";
+}
+export interface UsageInfo {
+  status: "allowed" | "warning" | "limited";
+  utilization?: number;
+  window?: string;
+  resetsAt?: number;
 }
 export interface TaskState {
   status: "claimed" | "done" | "parked";
@@ -76,6 +83,11 @@ export interface Snapshot {
   budget: { node_usd: number; team_usd: number };
   spent: Record<string, number>;
   merges: number;
+  agent: "claude" | "codex" | "fake";
+  auth: "subscription" | "api_key";
+  pausedUntil: number;
+  usage: Record<string, UsageInfo>;
+  adapterDefault?: string;
   tasks: TaskRow[];
   running: RunningRow[];
   live: boolean;

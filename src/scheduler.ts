@@ -4,6 +4,7 @@ import type { StateRef } from "./claims.js";
 import { leasesOverlap } from "./lease.js";
 
 export type Readiness = "done" | "parked" | "running" | "stale" | "ready" | "waiting" | "blocked";
+// A released task ("open" state) is treated like an unclaimed one, but claimed by compare-and-swap.
 
 export interface Pick {
   task: Task;
@@ -39,6 +40,7 @@ export function readiness(tasks: Task[], states: Map<string, StateRef>, isStale:
     else if (s?.state.status === "parked") r = "parked";
     else if (s?.state.status === "claimed") r = isStale(s) ? "stale" : "running";
     else {
+      // no state, or released back to the team ("open")
       const deps = byId.get(id)!.depends_on.map(get);
       if (deps.some((d) => d === "parked" || d === "blocked")) r = "blocked";
       else if (deps.every((d) => d === "done")) r = "ready";
@@ -83,7 +85,7 @@ export function pickNext(opts: {
   const mine = candidates.filter((t) => me.lanes.includes(t.lane));
   const asPick = (t: Task, stolen: boolean): Pick => ({
     task: byId.get(t.id)!,
-    takeover: r.get(t.id) === "stale" ? states.get(t.id) : undefined,
+    takeover: r.get(t.id) === "stale" || states.get(t.id)?.state.status === "open" ? states.get(t.id) : undefined,
     stolen,
   });
   if (mine.length) return asPick(mine[0], false);

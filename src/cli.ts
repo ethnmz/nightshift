@@ -23,7 +23,7 @@ function args(argv: string[]) {
     if (a.startsWith("--")) {
       const [k, v] = a.slice(2).split("=");
       if (v !== undefined) flags[k] = v;
-      else if (argv[i + 1] && !argv[i + 1].startsWith("--") && ["node", "port", "project", "night"].includes(k)) flags[k] = argv[++i];
+      else if (argv[i + 1] && !argv[i + 1].startsWith("--") && ["node", "port", "project", "night", "agent"].includes(k)) flags[k] = argv[++i];
       else flags[k] = true;
     } else pos.push(a);
   }
@@ -62,7 +62,7 @@ async function main() {
 
 Evening (everyone awake)
   init [--project NAME]        create .nightshift/{idea.md,night.yaml,tasks.yaml} from templates
-  plan                         planner agent: idea.md → contracts, stubs, tasks.yaml
+  plan [--agent codex]         planner agent: idea.md → contracts, stubs, tasks.yaml
   validate                     check night.yaml + tasks.yaml, print the DAG
   serve --node ID              open the dashboard (plan editor, preflight, start) on localhost
   preflight --node ID [--skip-live]   everything that could block at 3 a.m. fails now
@@ -113,7 +113,7 @@ Any time
   }
 
   if (cmd === "plan") {
-    const res = await plan(r);
+    const res = await plan(r, console.log, flags.agent === "codex" ? "codex" : "claude");
     console.log(res.ok ? `\nPlanned ${res.tasks} tasks ($${res.cost.toFixed(2)}). Review .nightshift/tasks.yaml and the contracts, then commit and push.` : `\nPlanner did not produce a valid tasks.yaml: ${res.errors}`);
     process.exitCode = res.ok ? 0 : 1;
     return;

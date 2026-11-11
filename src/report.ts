@@ -51,7 +51,14 @@ export async function buildReport(root: string, nodeId: string, night?: string):
   L.push(`# Nightshift report: ${cfg.project}, night ${n}`, "");
   L.push(`**${count("done")}/${tasks.length} tasks merged** into \`${branch}\` · ${count("parked")} parked · ${count("blocked")} blocked by parked work · ${count("running") + count("stale")} unfinished · ${count("ready") + count("waiting")} not started`);
   L.push(`Started ${fmt(Math.min(...started))}, last node finished ${fmt(ended.length ? Math.max(...ended) : undefined)}. Diff vs \`${cfg.base_branch}\`: ${stat || "none"}.`);
-  L.push(`Estimated model spend: ${[...spent].map(([k, v]) => `${k} $${v.toFixed(2)}`).join(", ") || "n/a"} (team $${[...spent.values()].reduce((a, b) => a + b, 0).toFixed(2)} of $${cfg.budget.team_usd}).`);
+  const usageLine = `${[...spent].map(([k, v]) => `${k} $${v.toFixed(2)}`).join(", ") || "n/a"} (team $${[...spent.values()].reduce((a, b) => a + b, 0).toFixed(2)} of the $${cfg.budget.team_usd} cap)`;
+  L.push(
+    cfg.auth === "subscription"
+      ? `Usage: agents ran on each teammate's own subscription login, so nothing was billed per use. Estimated equivalent at API prices: ${usageLine}. Codex nodes report tokens, not dollars.`
+      : `API spend: ${usageLine}.`,
+  );
+  const pauses = envs.filter((e) => typeof e.body.paused_until === "number" && e.type === "note");
+  if (pauses.length) L.push(`Plan usage limits paused: ${[...new Set(pauses.map((e) => e.from))].join(", ")} (their running tasks were released to other nodes).`);
   L.push("", "> Merging to `" + cfg.base_branch + "` is a human decision. Read *Decisions to review* first.", "");
 
   const assumptions = by("assumption");

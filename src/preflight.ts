@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, statfsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { loadNight, loadTasks, missingAuthorizations, nightBranch, nightName, findNode } from "./config.js";
+import { loadNight, loadTasks, missingAuthorizations, nightBranch, nightName, findNode, agentFor, KEY_ENV } from "./config.js";
 import { Git } from "./git.js";
 import { run, sh, childEnv } from "./exec.js";
 
@@ -115,30 +115,78 @@ export async function preflight(root: string, nodeId: string, opts: { live?: boo
     /* not critical */
   }
 
-  // 6. The model is reachable and answers without any prompt
-  if (cfg.adapter === "claude") {
-    if (opts.live === false) add("claude", "warn", "live check skipped (--skip-live)");
+  // 6. The coding agent: installed, signed in with the teammate's SUBSCRIPTION, answers headless
+  const agent = agentFor(cfg, me);
+  const keysInShell = KEY_ENV.filter((k) => process.env[k]);
+  if (cfg.auth === "subscription" && keysInShell.length)
+    add("API keys in shell", "warn", `${keysInShell.join(", ")} set in this shell. Nightshift removes them from agents so your subscription is used, not the key.`);
+  const agentEnv = cfg.auth === "subscription" ? KEY_ENV : [];
+  if (agent === "claude") {
+    const st = await run("claude", ["auth", "status"], { timeoutMs: 20_000 });
+    if (st.code === 0) {
+      try {
+        const j = JSON.parse(st.stdout) as { loggedIn?: boolean; authMethod?: string; loginExpiresAt?: string };
+        const sub = j.authMethod === "claude.ai";
+        if (!j.loggedIn) add("Claude login", "fail", "Claude Code is not logged in. Run: claude  (then /login with your Claude subscription)");
+        else if (cfg.auth === "subscription" && !sub) add("Claude login", "fail", `Claude Code is logged in with ${j.authMethod}, not a claude.ai subscription. Run /login and choose your Claude account.`);
+        else add("Claude login", "pass", sub ? "claude.ai subscription (Pro/Max/Team)" : String(j.authMethod));
+        if (j.loginExpiresAt) {
+          const hrs = (Date.parse(j.loginExpiresAt) - Date.now()) / 36e5;
+          add("login expiry", hrs < 16 ? "fail" : hrs < 72 ? "warn" : "pass", hrs < 16 ? `login expires in ${hrs.toFixed(1)} h, during the night. Run /login in Claude Code now.` : `login valid for ${(hrs / 24).toFixed(1)} more days`);
+        }
+      } catch {
+        add("Claude login", "warn", "could not read `claude auth status`; the live check below confirms the login");
+      }
+    } else add("Claude login", "warn", "`claude` CLI not on PATH; the live check below confirms the login");
+    if (opts.live === false) add("Claude live check", "warn", "skipped (--skip-live)");
     else {
       try {
         let ok = false;
-        let cost = 0;
+        let source = "";
         for await (const m of query({
           prompt: "Reply with exactly: OK",
-          options: { maxTurns: 1, permissionMode: "dontAsk", settingSources: [], model: cfg.models.builder, env: childEnv() },
+          options: { maxTurns: 1, permissionMode: "dontAsk", settingSources: [], model: me.model ?? cfg.models.builder, env: childEnv({}, agentEnv) },
         })) {
-          if (m.type === "result") {
-            ok = m.subtype === "success" && /OK/.test(m.result ?? "");
-            cost = m.total_cost_usd;
-          }
+          if (m.type === "system" && (m as { subtype?: string }).subtype === "init") source = String((m as { apiKeySource?: string }).apiKeySource ?? "");
+          if (m.type === "result") ok = m.subtype === "success" && /OK/.test(m.result ?? "");
         }
-        add("claude", ok ? "pass" : "fail", ok ? `model answered headless ($${cost.toFixed(4)})${cfg.models.builder ? `, model ${cfg.models.builder}` : ""}` : "no OK from the model: check login / ANTHROPIC_API_KEY");
+        const viaSub = source === "none" || source === "oauth";
+        if (!ok) add("Claude live check", "fail", "no OK from the model: check your login and plan");
+        else if (cfg.auth === "subscription" && !viaSub) add("Claude live check", "fail", `answered, but through ${source} instead of your subscription`);
+        else add("Claude live check", "pass", `answered headless via ${viaSub ? "your subscription" : source}${me.model ?? cfg.models.builder ? `, model ${me.model ?? cfg.models.builder}` : ""}`);
       } catch (e) {
-        add("claude", "fail", String(e).slice(0, 300));
+        add("Claude live check", "fail", String(e).slice(0, 300));
       }
     }
-  } else add("adapter", "warn", `adapter is "${cfg.adapter}": no real agents will run (rehearsal)`);
+  } else if (agent === "codex") {
+    const bin = process.env.NIGHTSHIFT_CODEX_BIN ?? "codex";
+    const help = await run(bin, ["exec", "--help"], { timeoutMs: 20_000 });
+    const flagsOk = help.code === 0 && help.stdout.includes("--sandbox") && help.stdout.includes("workspace-write") && help.stdout.includes("--json");
+    add("Codex CLI", flagsOk ? "pass" : "fail", flagsOk ? "`codex exec` supports --json and the workspace-write sandbox" : help.code !== 0 ? "codex not found. Install: npm i -g @openai/codex" : "this codex version lacks --json/--sandbox workspace-write; update it");
+    const login = await run(bin, ["login", "status"], { timeoutMs: 20_000 });
+    const out = (login.stdout + login.stderr).trim();
+    const sub = /chatgpt/i.test(out);
+    if (login.code !== 0 || /not logged in/i.test(out)) add("Codex login", "fail", "Codex is not logged in. Run: codex login  (sign in with ChatGPT)");
+    else if (cfg.auth === "subscription" && !sub) add("Codex login", "fail", `Codex uses "${out.slice(0, 80)}", not your ChatGPT plan. Run: codex logout, then codex login`);
+    else add("Codex login", "pass", out.slice(0, 120));
+    if (opts.live === false) add("Codex live check", "warn", "skipped (--skip-live)");
+    else if (flagsOk) {
+      const r = await run(bin, ["exec", "--json", "-s", "read-only", "-c", 'approval_policy="never"', "--skip-git-repo-check", "-C", root, ...(me.model ? ["-m", me.model] : []), "-"], {
+        input: "Reply with exactly: OK",
+        timeoutMs: 180_000,
+      });
+      const ok = r.code === 0 && /"agent_message"[\s\S]*OK/.test(r.stdout);
+      add("Codex live check", ok ? "pass" : "fail", ok ? "answered headless with no prompts" : `${r.timedOut ? "timed out" : "failed"}: ${(r.stderr || r.stdout).trim().slice(-300)}`);
+    }
+  } else add("agent", "warn", `adapter is "fake": no real agents will run (rehearsal)`);
 
-  add("budget", "pass", `$${cfg.budget.node_usd} per node, $${cfg.budget.team_usd} team, ${cfg.concurrency} workers per node`);
+  add(
+    "usage cap",
+    "pass",
+    cfg.auth === "subscription"
+      ? `subscriptions are not billed per use; a node still stops at about $${cfg.budget.node_usd} of estimated usage (team $${cfg.budget.team_usd}) and pauses on plan limits. ${cfg.concurrency} agents per Mac.`
+      : `API billing: $${cfg.budget.node_usd} per node, $${cfg.budget.team_usd} team. ${cfg.concurrency} agents per Mac.`,
+  );
   return out;
 }
 

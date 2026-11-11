@@ -2,12 +2,13 @@
 // result (dashboard or editor) before anyone starts the night.
 import { existsSync, readFileSync } from "node:fs";
 import YAML from "yaml";
-import { loadNight, paths, TaskFile, validateTasks, DEFAULT_ALLOW } from "./config.js";
+import { loadNight, paths, TaskFile, validateTasks, DEFAULT_ALLOW, KEY_ENV } from "./config.js";
+import { CodexAdapter } from "./agents/codex.js";
 import { ClaudeAdapter } from "./agents/claude.js";
 import { prompt } from "./prompts.js";
 import type { NightshiftTools } from "./agents/types.js";
 
-export async function plan(root: string, log: (s: string) => void = console.log): Promise<{ ok: boolean; tasks: number; cost: number; errors?: string }> {
+export async function plan(root: string, log: (s: string) => void = console.log, agent: "claude" | "codex" = "claude"): Promise<{ ok: boolean; tasks: number; cost: number; errors?: string }> {
   const cfg = loadNight(root);
   const p = paths(root);
   if (!existsSync(p.idea)) throw new Error(`write the idea first: ${p.idea}`);
@@ -30,7 +31,7 @@ export async function plan(root: string, log: (s: string) => void = console.log)
     submit_review: async () => "n/a",
   };
   const nodes = cfg.nodes.map((n) => `- ${n.name} (${n.id}): lanes ${n.lanes.join(", ")}`).join("\n");
-  const adapter = new ClaudeAdapter();
+  const adapter = agent === "codex" ? new CodexAdapter() : new ClaudeAdapter();
   let cost = 0;
   let errors = "";
   for (let round = 1; round <= 2; round++) {
@@ -42,7 +43,8 @@ export async function plan(root: string, log: (s: string) => void = console.log)
         round === 1
           ? prompt("planner", { node_count: cfg.nodes.length, nodes })
           : `.nightshift/tasks.yaml is invalid:\n${errors}\nFix it (same schema) and keep everything else.`,
-      model: cfg.models.planner,
+      model: agent === "claude" ? cfg.models.planner : undefined,
+      removeEnv: cfg.auth === "subscription" ? KEY_ENV : [],
       maxTurns: 120,
       timeoutMs: 40 * 60_000,
       stuckMs: 10 * 60_000,

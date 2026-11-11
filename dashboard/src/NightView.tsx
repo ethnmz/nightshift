@@ -30,23 +30,43 @@ export function NightView({ snap, events }: { snap: Snapshot; events: LedgerEven
           const merged = mine.filter((t) => t.readiness === "done").length;
           const up = nodeUp.get(n.id);
           const stale = mine.some((t) => t.readiness === "stale");
+          const usage = snap.usage[n.id];
+          const agent = n.agent ?? (snap.agent === "fake" ? "fake" : n.id === snap.node.id ? snap.agent : "claude");
+          const pausedUntil = n.id === snap.node.id ? snap.pausedUntil : usage?.status === "limited" ? usage.resetsAt ?? 0 : 0;
+          const paused = pausedUntil > Date.now();
           return (
             <div key={n.id} className={`rounded-xl border p-4 ${n.id === snap.node.id ? "border-amber-300/40 bg-night-850" : "border-night-700 bg-night-900"}`}>
               <div className="flex items-center justify-between">
                 <div className="font-medium text-white">
                   {n.name} {n.id === snap.node.id && <span className="text-xs font-normal text-amber-300">· this Mac</span>}
                 </div>
-                <span className={`text-xs ${stale ? "text-orange-300" : up === "node_up" ? "text-emerald-300" : "text-slate-500"}`}>
-                  {stale ? "silent: claims going stale" : up === "node_up" ? "online" : up === "node_down" ? "finished" : "not started"}
+                <span className={`text-xs ${paused ? "text-amber-300" : stale ? "text-orange-300" : up === "node_up" ? "text-emerald-300" : "text-slate-500"}`}>
+                  {paused ? `paused until ${new Date(pausedUntil).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : stale ? "silent: claims going stale" : up === "node_up" ? "online" : up === "node_down" ? "finished" : "not started"}
                 </span>
               </div>
-              <div className="mt-0.5 text-xs text-slate-400">lanes: {n.lanes.join(", ")}</div>
+              <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-400">
+                <span className={`rounded px-1.5 py-px ${agent === "codex" ? "bg-teal-500/15 text-teal-200" : agent === "fake" ? "bg-night-700 text-slate-300" : "bg-orange-500/15 text-orange-200"}`}>
+                  {agent === "codex" ? "Codex" : agent === "fake" ? "rehearsal" : "Claude Code"}
+                </span>
+                <span>lanes: {n.lanes.join(", ")}</span>
+              </div>
               <div className="mt-3 flex items-end justify-between">
                 <div className="text-sm text-slate-300">
                   <span className="text-2xl font-semibold tabular-nums text-white">{merged}</span> merged
                   {runningNow.length > 0 && <span className="ml-2 text-indigo-200">· {runningNow.length} running</span>}
                 </div>
-                <div className="text-xs tabular-nums text-slate-400">${(snap.spent[n.id] ?? 0).toFixed(2)} / ${snap.budget.node_usd}</div>
+                <div className="text-right text-xs tabular-nums text-slate-400" title={snap.auth === "subscription" ? "Estimated at API prices; not billed on a subscription" : "API spend"}>
+                  {usage?.utilization !== undefined ? (
+                    <div className={usage.status === "limited" ? "text-amber-300" : usage.status === "warning" ? "text-amber-200" : "text-slate-300"}>
+                      plan {Math.round((usage.utilization <= 1 ? usage.utilization * 100 : usage.utilization))}% {usage.window ? `(${usage.window.replace(/_/g, "-")})` : ""}
+                    </div>
+                  ) : usage?.status === "limited" ? (
+                    <div className="text-amber-300">plan limit reached</div>
+                  ) : null}
+                  <div>
+                    {snap.auth === "subscription" ? "est. " : ""}${(snap.spent[n.id] ?? 0).toFixed(2)} / ${snap.budget.node_usd}
+                  </div>
+                </div>
               </div>
               {runningNow.length > 0 && (
                 <div className="mt-2 truncate text-xs text-indigo-200/80">
@@ -72,7 +92,8 @@ export function NightView({ snap, events }: { snap: Snapshot; events: LedgerEven
                 </div>
                 <div className="mt-1 text-xs text-slate-400">
                   {r.role} · lane {r.lane}
-                  {r.stolen && " · stolen"} · attempt {r.attempt} · started {ago(r.startedAt)} · active {ago(r.lastActivity)} · ${r.cost.toFixed(2)}
+                  {r.stolen && " · stolen"} · attempt {r.attempt} · started {ago(r.startedAt)} · active {ago(r.lastActivity)}
+                  {snap.agent === "claude" && ` · est. $${r.cost.toFixed(2)}`}
                   {r.inboxWaiting > 0 && <span className="text-cyan-300"> · {r.inboxWaiting} message(s) queued</span>}
                 </div>
                 {r.lastText && <p className="mt-2 line-clamp-3 text-sm text-slate-300">{r.lastText}</p>}

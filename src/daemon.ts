@@ -5,7 +5,9 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import picomatch from "picomatch";
-import { loadNight, loadTasks, nightBranch, nightName, paths, findNode, Task, NightConfig, NodeSpec, DEFAULT_ALLOW, validateTasks } from "./config.js";
+import { loadNight, loadTasks, nightBranch, nightName, paths, findNode, Task, NightConfig, NodeSpec, DEFAULT_ALLOW, validateTasks, agentFor, KEY_ENV } from "./config.js";
+import { CodexAdapter } from "./agents/codex.js";
+import type { UsageInfo } from "./agents/types.js";
 import { Git } from "./git.js";
 import { Claims, StateRef } from "./claims.js";
 import { leaseViolations } from "./lease.js";
@@ -17,7 +19,7 @@ import { Adapter, AgentRequest, AgentResult, NightshiftTools, Role } from "./age
 import { ClaudeAdapter } from "./agents/claude.js";
 import { FakeAdapter } from "./agents/fake.js";
 import { prompt, bullets } from "./prompts.js";
-import { sh, tail, run } from "./exec.js";
+import { sh, tail, run, agentGuardEnv } from "./exec.js";
 import { Mutex, sleep } from "./mutex.js";
 
 export interface RunningInfo {
@@ -75,6 +77,12 @@ export class NightDaemon {
   spentByNode = new Map<string, number>();
   assumptions = 0;
   merges = 0;
+  agent: "claude" | "codex" | "fake" = "claude";
+  /** Latest subscription usage reported by this node's agent, and by other nodes (from the board). */
+  usage: UsageInfo | undefined;
+  usageByNode = new Map<string, UsageInfo>();
+  /** Set when the subscription's usage limit is hit: no new tasks until then. */
+  pausedUntil = 0;
   private seenMsgs = new Set<string>();
   private laneBacklog = new Map<string, string[]>();
   private idleSince = Date.now();
@@ -97,7 +105,8 @@ export class NightDaemon {
     this.claims = new Claims(this.git, this.cfg.remote, this.night);
     this.ledger = new Ledger(join(this.local, `ledger-${this.night}.jsonl`), this.me.id);
     this.board = o.board ?? makeBoard(this.cfg, o.root, join(this.local, "board-cursor"));
-    this.adapter = o.adapter ?? (this.cfg.adapter === "fake" ? new FakeAdapter() : new ClaudeAdapter());
+    this.agent = agentFor(this.cfg, this.me);
+    this.adapter = o.adapter ?? (this.agent === "fake" ? new FakeAdapter(this.me.id) : this.agent === "codex" ? new CodexAdapter() : new ClaudeAdapter());
     this.baseTasks = loadTasks(o.root);
     this.loopMs = o.loopMs ?? 3000;
     this.exitWhenDone = o.exitWhenDone ?? true;
@@ -131,7 +140,7 @@ export class NightDaemon {
       to: fields.to ?? "*",
       type,
       task: fields.task,
-      body: { ...(fields.body ?? {}), spent: Number(this.spentNode.toFixed(4)) },
+      body: { ...(fields.body ?? {}), spent: Number(this.spentNode.toFixed(4)), ...(this.usage ? { usage: this.usage } : {}), ...(this.paused() ? { paused_until: this.pausedUntil } : {}) },
       at: Date.now(),
       night: this.night,
     };
@@ -258,7 +267,7 @@ export class NightDaemon {
         this.stopReason = "budget reached";
         await this.post("budget", `Budget reached (node $${this.spentNode.toFixed(2)}, team $${this.spentTeam.toFixed(2)}). No new tasks from this node.`);
       }
-      while (!overBudget && !this.finished && this.running.size < this.cfg.concurrency) {
+      while (!overBudget && !this.paused() && !this.finished && this.running.size < this.cfg.concurrency) {
         const pick = pickNext({
           tasks: this.tasks,
           states: this.statesWithMerged(),
@@ -313,6 +322,7 @@ export class NightDaemon {
       return;
     }
     if (env.night && env.night !== this.night) return;
+    if (env.body.usage && typeof env.body.usage === "object") this.usageByNode.set(env.from, env.body.usage as UsageInfo);
     if (typeof env.body.spent === "number") this.spentByNode.set(env.from, Math.max(this.spentByNode.get(env.from) ?? 0, env.body.spent as number));
     if (replay) return;
     this.ledger.add("board", { task: env.task, data: { from: env.from, to: env.to, type: env.type, body: env.body } });
@@ -509,7 +519,9 @@ export class NightDaemon {
     }, Math.min(5000, stuckMs / 2));
     const logTask = o.task?.id ?? o.taskForLog;
     const remainingNode = Math.max(0.01, this.cfg.budget.node_usd - this.spentNode);
-    const model = o.role === "reviewer" ? this.cfg.models.reviewer : o.role === "planner" ? this.cfg.models.planner : this.cfg.models.builder;
+    // Codex nodes use the teammate's own model choice (cfg.models are Claude model ids).
+    const roleModel = o.role === "reviewer" ? this.cfg.models.reviewer : o.role === "planner" ? this.cfg.models.planner : this.cfg.models.builder;
+    const model = this.me.model ?? (this.agent === "claude" ? roleModel : undefined);
     const rules = prompt("rules", {
       project: this.cfg.project,
       node_count: this.cfg.nodes.length,
@@ -537,9 +549,16 @@ export class NightDaemon {
           o.running.lastActivity = last;
           if (e.text && (e.kind === "text" || e.kind === "result")) o.running.lastText = e.text.slice(0, 300);
         }
+        if (e.kind === "usage" && e.usage) {
+          this.usage = e.usage;
+          this.usageByNode.set(this.me.id, e.usage);
+        }
+        if (e.kind === "text" && !e.text) return; // bare activity ping
         this.ledger.add(`agent_${e.kind}`, { task: logTask, role: o.role, data: { tool: e.tool, text: e.text?.slice(0, 1500), input: e.kind === "tool" ? summarizeInput(e.input) : undefined } });
       },
       resume: o.resume,
+      env: agentGuardEnv(this.emptyGhDir(), this.cfg.remote),
+      removeEnv: this.cfg.auth === "subscription" ? KEY_ENV : [],
       signal: abort.signal,
       fake: o.task?.fake,
     };
@@ -557,6 +576,10 @@ export class NightDaemon {
     if (!reason && abort.signal.aborted && !res.ok) res.reason = "aborted";
     this.addSpend(res.costUsd);
     if (o.running) o.running.cost += res.costUsd;
+    if (res.reason === "usage_limit" || (!res.ok && this.paused())) {
+      this.pauseForUsage(res.resumeAt);
+      throw new UsageLimitHit();
+    }
     this.ledger.add("agent_done", { task: logTask, role: o.role, data: { ok: res.ok, reason: res.reason, cost: res.costUsd, denials: res.denials } });
     return res;
   }
@@ -631,9 +654,9 @@ export class NightDaemon {
 
   private heartbeat(t: Task, r: Running): NodeJS.Timeout {
     return setInterval(async () => {
-      if (r.lost || r.phase === "done" || r.phase === "parked") return;
+      if (r.lost || r.phase === "done" || r.phase === "parked" || r.phase === "released") return;
       const ok = await this.transitionMine(t, r, { status: "claimed", node: this.me.id, attempt: r.attempt, since: r.startedAt });
-      if (!ok && !r.lost && r.phase !== "done" && r.phase !== "parked") {
+      if (!ok && !r.lost && r.phase !== "done" && r.phase !== "parked" && r.phase !== "released") {
         // Someone else owns it now (we looked stale to them). Stop and discard our work.
         r.lost = true;
         r.abort.abort();
@@ -762,7 +785,7 @@ export class NightDaemon {
           let verdict: "approve" | "changes" | undefined;
           let notes = "";
           const diff = (await g.raw(["diff", `${base}...HEAD`])).stdout;
-          await this.runAgent({
+          const rv = await this.runAgent({
             role: "reviewer",
             task: t,
             cwd: wt,
@@ -776,6 +799,13 @@ export class NightDaemon {
               notes = n;
             },
           });
+          if (!verdict) {
+            const m = /VERDICT:\s*(approve|changes)\b([\s\S]*)/i.exec(rv.text);
+            if (m) {
+              verdict = m[1].toLowerCase() as "approve" | "changes";
+              notes = (m[2].trim() || rv.text).slice(0, 4000);
+            }
+          }
           // A reviewer that never submits a verdict does not block the night.
           this.ledger.add("review", { task: t.id, data: { verdict: verdict ?? "none", notes } });
           if (verdict === "changes") {
@@ -805,6 +835,10 @@ export class NightDaemon {
       await this.finishDone(t, r, merged, await g.changedFiles(`${merged}~1`, merged).catch(() => []));
       await this.maybeGate();
     } catch (e) {
+      if (e instanceof UsageLimitHit) {
+        if (!r.lost && !this.stopped) await this.release(t, r, "usage limit reached on this teammate's plan").catch(() => {});
+        return;
+      }
       this.ledger.add("error", { task: t.id, data: { where: "execute", error: String(e) } });
       if (!r.lost && !this.stopped) {
         const g = new Git(existsSync(wt) ? wt : this.root);
@@ -876,7 +910,7 @@ export class NightDaemon {
     if (!ok) this.ledger.add("error", { task: t.id, data: { where: "finishDone", error: "could not record done state" } });
     this.merges++;
     this.ledger.add("task_done", { task: t.id, data: { merge, cost: r.cost, files } });
-    await this.post("task_done", `Merged ${t.id}: ${t.title} (${merge.slice(0, 8)}) in ${Math.round((Date.now() - r.startedAt) / 60000)} min, $${r.cost.toFixed(2)}.`, {
+    await this.post("task_done", `Merged ${t.id}: ${t.title} (${merge.slice(0, 8)}) in ${Math.round((Date.now() - r.startedAt) / 60000)} min${this.agent === "codex" ? "" : this.cfg.auth === "subscription" ? `, est. usage $${r.cost.toFixed(2)} (subscription, not billed)` : `, $${r.cost.toFixed(2)}`}.`, {
       task: t.id,
       body: { merge, cost: r.cost, files: files.slice(0, 50), lane: t.lane, stolen: r.stolen },
     });
@@ -934,6 +968,40 @@ export class NightDaemon {
     );
   }
 
+  // ---------- subscription usage limits ----------
+
+  paused(): boolean {
+    return Date.now() < this.pausedUntil;
+  }
+
+  private emptyGhDir(): string {
+    const d = join(this.local, "agent-gh-config");
+    mkdirSync(d, { recursive: true });
+    return d;
+  }
+
+  /** The plan's window is used up: stop taking tasks until it resets, abort agents that would fail anyway. */
+  pauseForUsage(resumeAt?: number) {
+    const until = Math.max(resumeAt ?? 0, Date.now() + 60_000);
+    const target = resumeAt ? until : Date.now() + this.cfg.usage_limit_pause_minutes * 60_000;
+    if (target <= this.pausedUntil) return;
+    this.pausedUntil = target;
+    this.usage = { ...(this.usage ?? {}), status: "limited", resetsAt: target };
+    this.ledger.add("paused", { data: { until: target } });
+    void this.post("note", `${this.me.name}'s ${this.agent === "codex" ? "Codex" : "Claude"} plan hit its usage limit. Pausing until ${new Date(target).toLocaleTimeString()}; releasing running tasks to other nodes.`, {
+      body: { text: "usage limit", paused_until: target },
+    });
+    for (const r of this.running.values()) r.abort.abort();
+  }
+
+  /** Hand a task back to the team without counting it as a failure. */
+  private async release(t: Task, r: Running, why: string) {
+    r.phase = "released";
+    await this.transitionMine(t, r, { status: "open", node: this.me.id, attempt: r.attempt, note: why, since: r.startedAt });
+    this.ledger.add("task_released", { task: t.id, data: { why } });
+    await this.post("task_released", `Released ${t.id} (${t.title}): ${why}. Another node can take it.`, { task: t.id, body: { why, lane: t.lane } });
+  }
+
   // ---------- snapshot for the dashboard ----------
 
   snapshot() {
@@ -951,6 +1019,10 @@ export class NightDaemon {
       budget: this.cfg.budget,
       spent: Object.fromEntries(this.spentByNode),
       merges: this.merges,
+      agent: this.agent,
+      auth: this.cfg.auth,
+      pausedUntil: this.pausedUntil,
+      usage: Object.fromEntries(this.usageByNode),
       tasks: this.tasks.map((t) => ({
         id: t.id,
         title: t.title,
@@ -1002,3 +1074,9 @@ function summarizeInput(input: unknown): unknown {
 }
 
 export { run };
+
+class UsageLimitHit extends Error {
+  constructor() {
+    super("usage limit");
+  }
+}

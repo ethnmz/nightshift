@@ -29,6 +29,7 @@ export const TYPE_COLOR: Record<string, string> = {
   task_done: "bg-emerald-500/15 text-emerald-300",
   task_claimed: "bg-indigo-500/15 text-indigo-200",
   task_parked: "bg-amber-500/15 text-amber-300",
+  task_released: "bg-amber-500/10 text-amber-200",
   task_added: "bg-sky-500/15 text-sky-200",
   assumption: "bg-fuchsia-500/15 text-fuchsia-200",
   ask: "bg-cyan-500/15 text-cyan-200",

@@ -80,7 +80,7 @@ export default function App() {
           </nav>
           {snap && (
             <div className="ml-auto flex items-center gap-4">
-              <Spend label="team" spent={teamSpent} cap={snap.budget.team_usd} />
+              <Spend label={snap.auth === "subscription" ? "team est. usage" : "team spend"} spent={teamSpent} cap={snap.budget.team_usd} sub={snap.auth === "subscription"} />
               {running && <StopButtons />}
             </div>
           )}
@@ -109,12 +109,15 @@ function StatusPill({ snap, running }: { snap: Snapshot; running: boolean }) {
   return <span className="rounded-full bg-night-800 px-2.5 py-0.5 text-slate-400">not running on this Mac</span>;
 }
 
-function Spend({ label, spent, cap }: { label: string; spent: number; cap: number }) {
+function Spend({ label, spent, cap, sub }: { label: string; spent: number; cap: number; sub: boolean }) {
   const pct = Math.min(100, (spent / cap) * 100);
+  const tip = sub
+    ? `Estimated at API prices: $${spent.toFixed(2)} of the $${cap} cap. On your subscriptions this is not billed; it counts toward each plan's usage limits.`
+    : `API spend $${spent.toFixed(2)} of $${cap}`;
   return (
-    <div className="hidden w-40 md:block" title={`${label} spend $${spent.toFixed(2)} of $${cap}`}>
+    <div className="hidden w-44 md:block" title={tip}>
       <div className="flex justify-between text-xs text-slate-400">
-        <span>{label} spend</span>
+        <span>{label}</span>
         <span className="tabular-nums">
           ${spent.toFixed(2)} / ${cap}
         </span>

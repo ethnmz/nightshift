@@ -11,6 +11,9 @@ export const NodeSpec = z.object({
   name: z.string(), // shown in board posts: "[Ethan's Nightshift]"
   login: z.string().optional(), // GitHub login; preflight checks `gh` runs as this user
   lanes: z.array(z.string()).min(1),
+  // Which coding agent this teammate's Mac runs, on their own subscription login.
+  agent: z.enum(["claude", "codex"]).optional(),
+  model: z.string().optional(), // per-teammate model override
 });
 export type NodeSpec = z.infer<typeof NodeSpec>;
 
@@ -61,7 +64,13 @@ export const NightConfig = z.object({
   // First word of every Bash command an agent may run. Anything else is denied (never asked).
   allow_commands: z.array(z.string()).default([]),
   poll_seconds: z.number().min(0.1).default(20),
-  adapter: z.enum(["claude", "fake"]).default("claude"),
+  adapter: z.enum(["claude", "codex", "fake"]).default("claude"), // default agent; nodes[].agent overrides
+  // "subscription": agents use each teammate's own Claude Code / Codex login (Pro/Max/Team or
+  // ChatGPT plan). API keys are removed from the agents' environment so nothing bills a key.
+  // "api_key": allow ANTHROPIC_API_KEY / OPENAI_API_KEY (pay per use).
+  auth: z.enum(["subscription", "api_key"]).default("subscription"),
+  // On a usage-limit hit: release the task to other nodes and pause this node until the limit resets.
+  usage_limit_pause_minutes: z.number().positive().default(30), // used when no reset time is reported
   dashboard_port: z.number().int().default(4545),
 });
 export type NightConfig = z.infer<typeof NightConfig>;
@@ -165,6 +174,14 @@ export function nightName(cfg: NightConfig, now = new Date()): string {
 }
 
 export const nightBranch = (night: string) => `night/${night}`;
+
+export function agentFor(cfg: NightConfig, node: NodeSpec): "claude" | "codex" | "fake" {
+  if (cfg.adapter === "fake") return "fake";
+  return node.agent ?? (cfg.adapter as "claude" | "codex");
+}
+
+/** Env vars that would make an agent bill an API key instead of the teammate's subscription. */
+export const KEY_ENV = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "OPENAI_API_KEY", "CODEX_API_KEY"];
 
 export function findNode(cfg: NightConfig, id: string): NodeSpec {
   const n = cfg.nodes.find((x) => x.id === id);

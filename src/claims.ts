@@ -5,7 +5,7 @@
 // so two nodes racing for the same task cannot both win. No server, no leader.
 import { Git } from "./git.js";
 
-export type TaskStatus = "claimed" | "done" | "parked";
+export type TaskStatus = "claimed" | "done" | "parked" | "open"; // open = released back to the team
 
 export interface TaskState {
   status: TaskStatus;

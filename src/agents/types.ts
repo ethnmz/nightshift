@@ -15,10 +15,19 @@ export interface NightshiftTools {
 }
 
 export interface AgentEvent {
-  kind: "text" | "tool" | "denied" | "result" | "error" | "inbox";
+  kind: "text" | "tool" | "denied" | "result" | "error" | "inbox" | "usage";
+  usage?: UsageInfo;
   text?: string;
   tool?: string;
   input?: unknown;
+}
+
+/** Subscription usage as the agent reports it (Claude: rate_limit_event; Codex: error text). */
+export interface UsageInfo {
+  status: "allowed" | "warning" | "limited";
+  utilization?: number; // 0..1 when known
+  window?: string; // e.g. five_hour, seven_day
+  resetsAt?: number; // ms epoch
 }
 
 export interface AgentRequest {
@@ -40,6 +49,8 @@ export interface AgentRequest {
   onEvent: (e: AgentEvent) => void;
   resume?: string;
   env?: Record<string, string>;
+  /** Env vars to remove for the agent process (API keys in subscription mode). */
+  removeEnv?: string[];
   signal?: AbortSignal;
   /** Extra data for the fake adapter (tests, rehearsals). */
   fake?: Record<string, unknown>;
@@ -47,7 +58,9 @@ export interface AgentRequest {
 
 export interface AgentResult {
   ok: boolean;
-  reason?: "timeout" | "stuck" | "error" | "max_turns" | "budget" | "aborted";
+  reason?: "timeout" | "stuck" | "error" | "max_turns" | "budget" | "aborted" | "usage_limit";
+  /** When reason is usage_limit: when the plan's window resets (ms epoch), if reported. */
+  resumeAt?: number;
   text: string;
   costUsd: number;
   sessionId?: string;

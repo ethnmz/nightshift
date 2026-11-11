@@ -59,6 +59,8 @@ export class ClaudeAdapter implements Adapter {
     let costUsd = 0;
     let sessionId: string | undefined;
     let ok = false;
+    let limitedUntil: number | undefined;
+    let limited = false;
 
     try {
       const q = query({
@@ -75,7 +77,7 @@ export class ClaudeAdapter implements Adapter {
           permissionMode: "default",
           disallowedTools: NEVER_TOOLS,
           mcpServers: { nightshift: nightshiftMcp(req.tools, req.role) },
-          env: childEnv(req.env),
+          env: childEnv(req.env, req.removeEnv),
           stderr: (d: string) => req.onEvent({ kind: "error", text: d.slice(0, 500) }),
           canUseTool: async (toolName, input) => {
             last = Date.now();
@@ -127,6 +129,23 @@ export class ClaudeAdapter implements Adapter {
 
       for await (const m of q) {
         last = Date.now();
+        if (m.type === "system" && (m as { subtype?: string }).subtype === "init") {
+          const src = (m as { apiKeySource?: string }).apiKeySource;
+          req.onEvent({ kind: "text", text: `auth: ${src === "none" || src === "oauth" ? "subscription login" : `API key (${src})`}` });
+        }
+        if (m.type === "rate_limit_event") {
+          // Subscription plan usage, reported live. "rejected" = the plan's window is used up.
+          const i = m.rate_limit_info;
+          const resetsAt = i.resetsAt ? (i.resetsAt < 1e12 ? i.resetsAt * 1000 : i.resetsAt) : undefined;
+          const status = i.status === "rejected" ? "limited" : i.status === "allowed_warning" ? "warning" : "allowed";
+          req.onEvent({ kind: "usage", usage: { status, utilization: i.utilization, window: i.rateLimitType, resetsAt } });
+          if (status === "limited") {
+            limited = true;
+            limitedUntil = resetsAt;
+            ac.abort();
+          }
+        }
+        if (m.type === "assistant" && (m as { error?: string }).error === "rate_limit") limited = true;
         if (m.type === "assistant") {
           for (const b of m.message.content as Array<{ type: string; text?: string; name?: string; input?: unknown }>) {
             if (b.type === "text" && b.text) req.onEvent({ kind: "text", text: b.text.slice(0, 2000) });
@@ -154,6 +173,9 @@ export class ClaudeAdapter implements Adapter {
       clearTimeout(wall);
       clearInterval(stuck);
       req.signal?.removeEventListener("abort", onOuterAbort);
+    }
+    if (!ok && (limited || /usage limit|rate limit|hit your limit/i.test(text))) {
+      return { ok, reason: "usage_limit", resumeAt: limitedUntil, text: text || "usage limit reached", costUsd, sessionId, denials };
     }
     return { ok, reason: ok ? undefined : reason ?? "error", text, costUsd, sessionId, denials };
   }

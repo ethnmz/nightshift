@@ -21,6 +21,7 @@ export const EnvelopeType = z.enum([
   "task_claimed",
   "task_done",
   "task_parked",
+  "task_released",
   "task_added",
   "gate_passed",
   "gate_failed",

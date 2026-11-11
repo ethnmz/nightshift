@@ -43,6 +43,23 @@ Each node loops:
 - A watchdog kills stuck or over-time agents and retries once. Budgets are per node and per team. The kill switch is `nightshift stop [--team]`, a dashboard button, or posting `nightshift stop` on the board.
 - `nightshift preflight` catches 3 a.m. blockers in the evening: auth and `gh` login, push access, claim refs, the check command, AC power, caffeinate, auto-updates, disk space, and a live model call.
 
+## Your own agents, on your own subscriptions
+
+Each teammate's Mac runs **their own coding agent, signed in with their own plan**. No API keys and no per-use billing:
+
+| Teammate's choice | One-time setup on that Mac | What Nightshift runs overnight |
+|---|---|---|
+| **Claude Code** (Pro / Max / Team) | `claude`, then `/login` | Claude Code headless (same login as the terminal and desktop app) |
+| **Codex** (ChatGPT plan) | `npm i -g @openai/codex`, then `codex login` | `codex exec`, sandboxed to the task worktree, `approval_policy="never"` |
+
+Set it per teammate in `night.yaml` (`nodes[].agent: claude | codex`). With `auth: subscription` (the default):
+- API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) are **removed from the agents' environment**, so they can't bill a key by accident.
+- Preflight checks that each agent is logged in with a **subscription**, that the login won't expire overnight, and that a live call answers via the subscription.
+- **Plan usage limits:** when a teammate's plan runs out (for example a 5-hour window), that node releases its tasks to the other nodes and pauses until the limit resets, then rejoins. The dashboard shows each node's plan usage and any pause.
+- Dollar amounts are Claude Code's *estimate at API prices* and are not charges. The `budget` cap just keeps one night from using a whole plan. Codex reports tokens, not dollars.
+
+The desktop app isn't driven directly (nobody is awake to click), but it uses the same login, so there's nothing extra to set up.
+
 ## Quick start
 
 ```bash
@@ -103,7 +120,7 @@ Then run the four printed `nightshift start` commands and open http://localhost:
 ## Tests
 
 ```bash
-npm test                                          # 31 tests: policy, leases, scheduler, claim races, no-prompt, 4-node e2e
+npm test                                          # 36 tests: policy, leases, scheduler, claim races, no-prompt, 4-node e2e, Codex, usage limits
 ```
 
 ```bash
@@ -113,6 +130,8 @@ NIGHTSHIFT_LIVE=1 npx vitest run test/live.test.ts  # one real Claude task (~$0.
 The e2e suite runs four in-process nodes against a bare git remote with the fake adapter. It checks that every task merges exactly once, out-of-lease edits are reverted, parked work is kept, a dead node's task is taken over, mid-task messages are delivered, questions get answered, the stuck watchdog fires, and `main` is untouched.
 
 ## Not verified yet
+- Codex against a real ChatGPT login. The Codex adapter is tested with a stand-in `codex` binary that uses the same flags and event format as `codex exec` 0.167. Preflight's live Codex check is the first real test.
+- A real plan hitting its usage limit overnight. The pause and hand-off logic is tested with simulated limits.
 - A real overnight run on four separate Macs, and the GitHub-issue board under real rate limits. The tests use the file board and a local bare remote.
 - The planner (`nightshift plan`) on a real idea, contract-change tasks with a real model, and the launchd agent.
 - Merge-conflict resolution by a fixer agent. Leases make conflicts rare, and the e2e tests don't force one.

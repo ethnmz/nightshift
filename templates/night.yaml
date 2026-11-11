@@ -11,12 +11,22 @@ board:
   repo: OWNER/REPO     # leave out to read it from the git remote
   issue: 1
 
-# One node per teammate, each on their own Mac with their own `gh` login and Claude account.
+# One node per teammate, each on their own Mac with their own `gh` login.
+# agent: which coding agent that Mac runs on its owner's subscription:
+#   claude = Claude Code (log in once with `claude` → /login, Pro/Max/Team plan)
+#   codex  = OpenAI Codex CLI (`npm i -g @openai/codex`, then `codex login` with ChatGPT)
 nodes:
-  - { id: ethan,  name: Ethan,  login: GITHUB_LOGIN, lanes: [frontend] }
-  - { id: diego,  name: Diego,  login: GITHUB_LOGIN, lanes: [voice] }
-  - { id: akshi,  name: Akshi,  login: GITHUB_LOGIN, lanes: [ai] }
-  - { id: aditri, name: Aditri, login: GITHUB_LOGIN, lanes: [core] }
+  - { id: ethan,  name: Ethan,  login: GITHUB_LOGIN, lanes: [frontend], agent: claude }
+  - { id: diego,  name: Diego,  login: GITHUB_LOGIN, lanes: [voice],    agent: claude }
+  - { id: akshi,  name: Akshi,  login: GITHUB_LOGIN, lanes: [ai],       agent: codex }
+  - { id: aditri, name: Aditri, login: GITHUB_LOGIN, lanes: [core],     agent: claude }
+
+# subscription = agents use each teammate's own Claude/ChatGPT plan login. API keys are removed
+# from the agents' environment, so nothing is billed per use. (api_key = pay-per-use keys.)
+auth: subscription
+# When a plan's usage limit is hit, that node releases its tasks to the others and pauses until
+# the limit resets (or this many minutes if the agent does not say when).
+usage_limit_pause_minutes: 30
 
 # Evening pre-authorization. These are the decisions humans used to make on the board.
 # All must be true before a night can start, so nothing overnight waits on a person.
@@ -33,6 +43,8 @@ gate:                           # integration gate every N merges by a node; fai
   every: 3
 
 concurrency: 2                  # agents per Mac
+# Usage cap. Measured as Claude Code's estimate at API prices. On subscriptions nothing is billed;
+# this just stops one node from using its whole plan in a night. (Codex reports tokens, not $.)
 budget: { node_usd: 25, team_usd: 100 }
 limits:
   task_minutes: 45
@@ -42,7 +54,7 @@ limits:
   heartbeat_seconds: 60
   command_timeout_seconds: 900
   retries: 1
-models:                         # leave blank for the Claude Code default
+models:                         # Claude model per role (Codex nodes use `model:` on the node, or their default)
   builder: claude-opus-5-5
   reviewer: claude-sonnet-5-5
   planner: claude-opus-5-5
@@ -52,5 +64,5 @@ contracts: [docs/API.md, docs/DATA_MODEL.md]
 contract_lane: core             # which lane applies contract-change requests
 allow_commands: []              # empty = the safe default list (git, node/npm/npx, python/pytest/pip/uv, coreutils)
 poll_seconds: 20
-adapter: claude                 # "fake" = rehearsal with no model calls
+adapter: claude                 # default agent for nodes without `agent:`; "fake" = rehearsal, no model calls
 dashboard_port: 4545
