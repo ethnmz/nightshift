@@ -1,0 +1,19 @@
+# The overnight task DAG. `nightshift plan` writes this from idea.md; edit it before bed.
+# Tasks that may run at the same time must have non-overlapping leases.
+tasks:
+  - id: T1
+    title: Project skeleton and test setup
+    lane: core
+    brief: |
+      Create the backend skeleton and a passing test command so every lane can build on it.
+    lease: ["backend/**", "package.json"]
+    acceptance: ["npm test"]
+  - id: T2
+    title: Create screen on fixtures
+    lane: frontend
+    depends_on: [T1]
+    brief: |
+      Build the Create screen against the fixtures in frontend/src/api/fixtures/, following docs/API.md.
+    lease: ["frontend/src/screens/Create*", "frontend/src/components/create/**"]
+    contracts: [docs/API.md]
+    acceptance: ["cd frontend && npm run build"]
