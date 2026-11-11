@@ -11,6 +11,7 @@
     "dashboard"
   ],
   "scripts": {
+    "start": "node bin/nightshift.mjs ui",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build:dashboard": "npm --workspace dashboard run build",

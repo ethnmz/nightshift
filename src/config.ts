@@ -18,7 +18,7 @@ export const NodeSpec = z.object({
 export type NodeSpec = z.infer<typeof NodeSpec>;
 
 export const BoardSpec = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("github"), repo: z.string().optional(), issue: z.number().int().positive() }),
+  z.object({ kind: z.literal("github"), repo: z.string().optional(), issue: z.number().int().positive().optional() }), // issue is created by "Share with team"
   // A shared JSONL file. Used for tests and for single-Mac rehearsals.
   z.object({ kind: z.literal("file"), path: z.string() }),
 ]);
@@ -92,7 +92,13 @@ export const Task = z.object({
 });
 export type Task = z.infer<typeof Task>;
 
-export const TaskFile = z.object({ tasks: z.array(Task) });
+export const TaskFile = z.object({
+  tasks: z.array(Task),
+  // Optional suggestions from the planner, adopted into night.yaml if the team set none.
+  check: z.string().optional(),
+  gate: z.object({ command: z.string(), every: z.number().optional() }).optional(),
+  contracts: z.array(z.string()).optional(),
+});
 
 export const DEFAULT_ALLOW = [
   "ls", "cat", "head", "tail", "wc", "grep", "rg", "find", "sed", "awk", "sort", "uniq", "diff", "echo", "printf",

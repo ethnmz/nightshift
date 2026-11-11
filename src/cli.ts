@@ -1,5 +1,5 @@
 // nightshift <command> — see `nightshift help`.
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -11,6 +11,7 @@ import { buildReport, openMorningPr } from "./report.js";
 import { plan } from "./planner.js";
 import { serve } from "./server.js";
 import { readiness } from "./scheduler.js";
+import { keepAwake, openBrowser } from "./platform.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES = join(HERE, "..", "templates");
@@ -28,6 +29,14 @@ function args(argv: string[]) {
     } else pos.push(a);
   }
   return { flags, pos };
+}
+
+function tryRoot(): string | null {
+  try {
+    return root();
+  } catch {
+    return null;
+  }
 }
 
 function root(): string {
@@ -58,7 +67,9 @@ async function main() {
   const { flags } = args(rest);
 
   if (cmd === "help" || cmd === "--help") {
-    console.log(`nightshift — overnight multi-agent builds for 4-person teams
+    console.log(`nightshift — overnight multi-agent builds for hackathon teams
+
+Easiest: run \`nightshift\` (or \`npm start\` in the nightshift folder) and use the app in your browser.
 
 Evening (everyone awake)
   init [--project NAME]        create .nightshift/{idea.md,night.yaml,tasks.yaml} from templates
@@ -68,15 +79,24 @@ Evening (everyone awake)
   preflight --node ID [--skip-live]   everything that could block at 3 a.m. fails now
 
 Night (everyone asleep)
-  start --node ID [--no-dashboard] [--no-caffeinate] [--skip-preflight]
-                               run this Mac's node until the night is finished
-  launchd --node ID [--install]  print (or install) a launchd agent that restarts the node if it crashes
+  start --node ID [--no-dashboard] [--no-keep-awake] [--skip-preflight]
+                               run this computer's node until the night is finished
+                               (keeps the computer awake; restarts the node if it crashes)
+  launchd --node ID [--install]  macOS only: also restart after a reboot/logout
 
 Any time
   status --node ID             team-wide task status from git refs
   stop [--team] --node ID      stop this node (or post a stop for every node)
   report --node ID [--pr]      morning report; --pr opens the one night→main PR
 `);
+    return;
+  }
+
+  if (cmd === "ui" || cmd === "app") {
+    const { port } = serve({ root: tryRoot(), port: typeof flags.port === "string" ? Number(flags.port) : undefined });
+    const url = `http://localhost:${port}`;
+    console.log(`Nightshift is open at ${url}  (leave this window open; Ctrl+C to quit)`);
+    if (!flags["no-open"]) setTimeout(() => openBrowser(url), 400);
     return;
   }
 
@@ -132,11 +152,13 @@ Any time
 
   if (cmd === "serve") {
     const { port } = serve({ root: r, node: id, port: typeof flags.port === "string" ? Number(flags.port) : undefined });
-    console.log(`Dashboard: http://localhost:${port}`);
+    console.log(`Nightshift: http://localhost:${port}`);
     return;
   }
 
-  if (cmd === "start") {
+  if (cmd === "start" && !flags.child) {
+    // Supervisor: preflight, keep the computer awake, then run the node in a child process and
+    // restart it if it crashes. A clean finish or a stop request ends the loop.
     if (!flags["skip-preflight"]) {
       const res = await preflight(r, id, { live: !flags["skip-live"] });
       const bad = res.filter((c) => c.status === "fail");
@@ -153,26 +175,46 @@ Any time
     const dir = join(p.local, id);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "daemon.pid"), String(process.pid));
-    if (!flags["no-caffeinate"] && process.platform === "darwin") {
-      // Keep the Mac awake exactly as long as this process lives.
-      spawn("caffeinate", ["-dimsu", "-w", String(process.pid)], { detached: true, stdio: "ignore" }).unref();
+    if (existsSync(join(dir, "STOP"))) rmSync(join(dir, "STOP")); // a stop from an earlier night
+    if (!flags["no-keep-awake"] && !flags["no-caffeinate"]) console.log(`Keeping this computer awake (${keepAwake(process.pid)}).`);
+    const loader = import.meta.resolve("tsx");
+    const childArgs = ["--import", loader, join(HERE, "cli.ts"), "start", "--child", "--node", id, ...(flags["no-dashboard"] ? ["--no-dashboard"] : [])];
+    let stopping = false;
+    let child: ReturnType<typeof spawn> | null = null;
+    const stop = () => {
+      stopping = true;
+      writeFileSync(join(dir, "STOP"), new Date().toISOString());
+    };
+    process.on("SIGINT", stop);
+    process.on("SIGTERM", stop);
+    for (let restarts = 0; ; restarts++) {
+      child = spawn(process.execPath, childArgs, { cwd: r, stdio: "inherit", windowsHide: true });
+      const code: number = await new Promise((res) => child!.on("exit", (c) => res(c ?? 1)));
+      if (code === 0 || stopping || existsSync(join(dir, "STOP"))) break;
+      if (restarts >= 30) {
+        console.error("The node crashed too many times; giving up. Its tasks will move to teammates.");
+        break;
+      }
+      console.error(`The node stopped unexpectedly (exit ${code}). Restarting in 15 s (restart ${restarts + 1}).`);
+      await new Promise((res) => setTimeout(res, 15_000));
     }
+    process.exit(0);
+  }
+
+  if (cmd === "start") {
+    // The node itself (started by the supervisor above).
     const d = new NightDaemon({ root: r, node: id });
     d.ledger.on("event", (e) => {
-      if (["task_claimed", "task_done", "task_parked", "stopped", "error", "gate"].includes(e.kind)) console.log(`${new Date(e.at).toLocaleTimeString()} ${e.kind} ${e.task ?? ""} ${e.data ? JSON.stringify(e.data).slice(0, 160) : ""}`);
+      if (["task_claimed", "task_done", "task_parked", "task_released", "paused", "stopped", "error", "gate"].includes(e.kind)) console.log(`${new Date(e.at).toLocaleTimeString()} ${e.kind} ${e.task ?? ""} ${e.data ? JSON.stringify(e.data).slice(0, 160) : ""}`);
     });
     if (!flags["no-dashboard"]) {
-      try {
-        const { port } = serve({ root: r, node: id, daemon: d });
-        console.log(`Dashboard: http://localhost:${port}`);
-      } catch {
-        /* port busy: the night still runs */
-      }
+      const { port } = serve({ root: r, node: id, daemon: d });
+      console.log(`Nightshift: http://localhost:${port}`);
     }
     const shutdown = () => d.stop("signal");
     process.on("SIGINT", shutdown);
     process.on("SIGTERM", shutdown);
-    console.log(`${d.me.name}'s node: night ${d.night}, branch ${d.branch}, adapter ${d.adapter.name}. Good night.`);
+    console.log(`${d.me.name}'s node: night ${d.night}, branch ${d.branch}, agent ${d.adapter.name}. Good night.`);
     await d.start();
     const rep = await buildReport(r, id).catch(() => null);
     console.log(`\n${d.summary()}${rep ? `\nReport: ${rep.file}` : ""}`);

@@ -2,14 +2,15 @@
 // stdin is closed, every tool that knows how to prompt is told not to, and a hard
 // timeout kills the whole process group.
 import { spawn } from "node:child_process";
+import { IS_WIN, killTree, shellArgv } from "./platform.js";
 
 export const NONINTERACTIVE_ENV: Record<string, string> = {
   CI: "1",
   GIT_TERMINAL_PROMPT: "0",
-  GIT_ASKPASS: "/usr/bin/false",
-  SSH_ASKPASS: "/usr/bin/false",
+  // No askpass helper: with GIT_TERMINAL_PROMPT=0 git fails instead of asking for a password.
   GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
-  GCM_INTERACTIVE: "never",
+  GCM_INTERACTIVE: "never", // Git Credential Manager (Windows): never pop up a sign-in window
+  GCM_GUI_PROMPT: "false",
   GH_PROMPT_DISABLED: "1",
   GH_NO_UPDATE_NOTIFIER: "1",
   GIT_EDITOR: "true",
@@ -81,18 +82,15 @@ export function run(cmd: string, args: string[], opts: RunOpts = {}): Promise<Ru
         cwd: opts.cwd,
         env: childEnv(opts.env),
         stdio: [opts.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
-        detached: true, // own process group, so a timeout kills grandchildren too
+        detached: !IS_WIN, // own process group on Unix, so a timeout kills grandchildren too
+        windowsHide: true,
       });
     } catch (e) {
       resolve({ code: 127, stdout: "", stderr: String(e), timedOut: false });
       return;
     }
     const killGroup = () => {
-      try {
-        if (child.pid) process.kill(-child.pid, "SIGKILL");
-      } catch {
-        /* already gone */
-      }
+      killTree(child.pid);
     };
     const timer = opts.timeoutMs
       ? setTimeout(() => {
@@ -122,7 +120,8 @@ export function run(cmd: string, args: string[], opts: RunOpts = {}): Promise<Ru
 
 /** Run a shell command line (acceptance checks, gate, global check). */
 export function sh(line: string, opts: RunOpts = {}): Promise<RunResult> {
-  return run("/bin/bash", ["-c", line], opts);
+  const [cmd, args] = shellArgv(line);
+  return run(cmd, args, opts);
 }
 
 export function tail(s: string, n = 4000): string {

@@ -53,7 +53,9 @@ export async function buildReport(root: string, nodeId: string, night?: string):
   L.push(`Started ${fmt(Math.min(...started))}, last node finished ${fmt(ended.length ? Math.max(...ended) : undefined)}. Diff vs \`${cfg.base_branch}\`: ${stat || "none"}.`);
   const usageLine = `${[...spent].map(([k, v]) => `${k} $${v.toFixed(2)}`).join(", ") || "n/a"} (team $${[...spent.values()].reduce((a, b) => a + b, 0).toFixed(2)} of the $${cfg.budget.team_usd} cap)`;
   L.push(
-    cfg.auth === "subscription"
+    cfg.adapter === "fake"
+      ? "Practice night: no AI was used."
+      : cfg.auth === "subscription"
       ? `Usage: agents ran on each teammate's own subscription login, so nothing was billed per use. Estimated equivalent at API prices: ${usageLine}. Codex nodes report tokens, not dollars.`
       : `API spend: ${usageLine}.`,
   );

@@ -7,6 +7,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { loadNight, loadTasks, missingAuthorizations, nightBranch, nightName, findNode, agentFor, KEY_ENV } from "./config.js";
 import { Git } from "./git.js";
 import { run, sh, childEnv } from "./exec.js";
+import { IS_MAC, IS_WIN, OS_NAME, bashPath, powerSource, resolveCli } from "./platform.js";
 
 export type CheckStatus = "pass" | "warn" | "fail";
 export interface CheckResult {
@@ -95,12 +96,17 @@ export async function preflight(root: string, nodeId: string, opts: { live?: boo
     rmSync(tmp, { recursive: true, force: true });
   } else add("global check", "warn", "no `check` command: merges are only guarded by per-task acceptance");
 
-  // 5. The Mac stays awake, on power, with room to work
-  if (process.platform === "darwin") {
-    const batt = await run("pmset", ["-g", "batt"], { timeoutMs: 5000 });
-    add("power", batt.stdout.includes("AC Power") ? "pass" : "fail", batt.stdout.includes("AC Power") ? "on AC power" : "on battery: plug in, or the Mac may sleep and its claims go stale");
-    const caf = await run("which", ["caffeinate"], { timeoutMs: 5000 });
-    add("caffeinate", caf.code === 0 ? "pass" : "fail", caf.code === 0 ? "start keeps the Mac awake with caffeinate -dimsu" : "caffeinate missing");
+  // 5. The computer stays awake, on power, with room to work
+  const power = powerSource();
+  add("power", power === "battery" ? "fail" : power === "ac" ? "pass" : "warn", power === "battery" ? "on battery: plug in, or the computer may sleep and its tasks move to teammates" : power === "ac" ? "plugged in" : "could not read the power source; keep it plugged in");
+  add("stay awake", "pass", IS_MAC ? "Nightshift holds sleep off with caffeinate while it runs. Keep the lid open." : IS_WIN ? "Nightshift asks Windows not to sleep while it runs. Keep the lid open (or set 'lid close: do nothing')." : "Nightshift uses systemd-inhibit while it runs.");
+  if (IS_WIN) {
+    const b = bashPath();
+    add("Git Bash", b ? "pass" : "fail", b ? `checks run in ${b}` : "Git Bash not found. Install Git for Windows: winget install Git.Git");
+    const lp = await run("git", ["config", "--get", "core.longpaths"], { timeoutMs: 5000 });
+    add("long paths", lp.stdout.trim() === "true" ? "pass" : "warn", lp.stdout.trim() === "true" ? "git long paths on" : "deep node_modules may hit Windows path limits. Run: git config --global core.longpaths true");
+  }
+  if (IS_MAC) {
     const lid = await run("pmset", ["-g"], { timeoutMs: 5000 });
     const sleepMin = /\bsleep\s+(\d+)/.exec(lid.stdout)?.[1];
     add("system sleep", "pass", `sleep=${sleepMin ?? "?"} min; caffeinate holds it off. Keep the lid open (or use an external display).`);
@@ -122,7 +128,8 @@ export async function preflight(root: string, nodeId: string, opts: { live?: boo
     add("API keys in shell", "warn", `${keysInShell.join(", ")} set in this shell. Nightshift removes them from agents so your subscription is used, not the key.`);
   const agentEnv = cfg.auth === "subscription" ? KEY_ENV : [];
   if (agent === "claude") {
-    const st = await run("claude", ["auth", "status"], { timeoutMs: 20_000 });
+    const [cbin, cpre] = resolveCli("claude");
+    const st = await run(cbin, [...cpre, "auth", "status"], { timeoutMs: 20_000 });
     if (st.code === 0) {
       try {
         const j = JSON.parse(st.stdout) as { loggedIn?: boolean; authMethod?: string; loginExpiresAt?: string };
@@ -137,7 +144,7 @@ export async function preflight(root: string, nodeId: string, opts: { live?: boo
       } catch {
         add("Claude login", "warn", "could not read `claude auth status`; the live check below confirms the login");
       }
-    } else add("Claude login", "warn", "`claude` CLI not on PATH; the live check below confirms the login");
+    } else add("Claude login", "warn", "`claude` command not found; the live check below confirms the login. (Install: npm install -g @anthropic-ai/claude-code)");
     if (opts.live === false) add("Claude live check", "warn", "skipped (--skip-live)");
     else {
       try {
@@ -159,11 +166,11 @@ export async function preflight(root: string, nodeId: string, opts: { live?: boo
       }
     }
   } else if (agent === "codex") {
-    const bin = process.env.NIGHTSHIFT_CODEX_BIN ?? "codex";
-    const help = await run(bin, ["exec", "--help"], { timeoutMs: 20_000 });
+    const [bin, pre] = resolveCli("codex");
+    const help = await run(bin, [...pre, "exec", "--help"], { timeoutMs: 20_000 });
     const flagsOk = help.code === 0 && help.stdout.includes("--sandbox") && help.stdout.includes("workspace-write") && help.stdout.includes("--json");
     add("Codex CLI", flagsOk ? "pass" : "fail", flagsOk ? "`codex exec` supports --json and the workspace-write sandbox" : help.code !== 0 ? "codex not found. Install: npm i -g @openai/codex" : "this codex version lacks --json/--sandbox workspace-write; update it");
-    const login = await run(bin, ["login", "status"], { timeoutMs: 20_000 });
+    const login = await run(bin, [...pre, "login", "status"], { timeoutMs: 20_000 });
     const out = (login.stdout + login.stderr).trim();
     const sub = /chatgpt/i.test(out);
     if (login.code !== 0 || /not logged in/i.test(out)) add("Codex login", "fail", "Codex is not logged in. Run: codex login  (sign in with ChatGPT)");
@@ -171,7 +178,7 @@ export async function preflight(root: string, nodeId: string, opts: { live?: boo
     else add("Codex login", "pass", out.slice(0, 120));
     if (opts.live === false) add("Codex live check", "warn", "skipped (--skip-live)");
     else if (flagsOk) {
-      const r = await run(bin, ["exec", "--json", "-s", "read-only", "-c", 'approval_policy="never"', "--skip-git-repo-check", "-C", root, ...(me.model ? ["-m", me.model] : []), "-"], {
+      const r = await run(bin, [...pre, "exec", "--json", "-s", "read-only", "-c", 'approval_policy="never"', "--skip-git-repo-check", "-C", root, ...(me.model ? ["-m", me.model] : []), "-"], {
         input: "Reply with exactly: OK",
         timeoutMs: 180_000,
       });

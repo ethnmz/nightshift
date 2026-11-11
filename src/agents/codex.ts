@@ -12,6 +12,7 @@ import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { childEnv } from "../exec.js";
+import { IS_WIN, killTree, resolveCli } from "../platform.js";
 import type { Adapter, AgentRequest, AgentResult, NightshiftTools } from "./types.js";
 
 export const MAILDIR = ".nightshift-mail";
@@ -60,7 +61,10 @@ const LIMIT_RE = /usage limit|rate limit|hit your limit|quota exceeded|too many 
 
 export class CodexAdapter implements Adapter {
   name = "codex";
-  constructor(private bin = process.env.NIGHTSHIFT_CODEX_BIN ?? "codex") {}
+  private cmd: [string, string[]];
+  constructor(bin?: string) {
+    this.cmd = resolveCli("codex", bin);
+  }
 
   async run(req: AgentRequest): Promise<AgentResult> {
     const mail = join(req.cwd, MAILDIR);
@@ -123,19 +127,14 @@ export class CodexAdapter implements Adapter {
     };
 
     const code = await new Promise<number>((resolve) => {
-      const child = spawn(this.bin, args, {
+      const child = spawn(this.cmd[0], [...this.cmd[1], ...args], {
         cwd: req.cwd,
         env: childEnv(req.env, req.removeEnv),
         stdio: ["pipe", "pipe", "pipe"],
-        detached: true,
+        detached: !IS_WIN,
+        windowsHide: true,
       });
-      const kill = () => {
-        try {
-          if (child.pid) process.kill(-child.pid, "SIGKILL");
-        } catch {
-          /* gone */
-        }
-      };
+      const kill = () => killTree(child.pid);
       req.signal?.addEventListener("abort", kill);
       const timer = setTimeout(kill, req.timeoutMs);
       const poll = setInterval(() => void pump().catch(() => {}), 1000);
@@ -182,7 +181,7 @@ export class CodexAdapter implements Adapter {
         if (stderr.length > 20_000) stderr = stderr.slice(-10_000);
       });
       child.on("error", (e) => {
-        failure = `could not start ${this.bin}: ${e.message}`;
+        failure = `could not start codex (${this.cmd[0]}): ${e.message}. Install it with: npm install -g @openai/codex`;
       });
       child.on("close", (c) => {
         clearTimeout(timer);

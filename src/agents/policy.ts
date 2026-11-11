@@ -140,7 +140,7 @@ export function decide(tool: string, input: Record<string, unknown>, ctx: Policy
   if (tool.startsWith("mcp__")) return deny("only the nightshift MCP tools are available overnight");
 
   if (READ_TOOLS.has(tool)) {
-    const p = String(input.file_path ?? input.path ?? input.notebook_path ?? "");
+    const p = String(input.file_path ?? input.path ?? input.notebook_path ?? "").replace(/\\/g, "/");
     if (p && SECRET_PATH.test(" " + p)) return deny("secrets and credential files are never read");
     return { allow: true };
   }
@@ -151,8 +151,8 @@ export function decide(tool: string, input: Record<string, unknown>, ctx: Policy
     if (!p) return deny("no file path given");
     const rel = relInside(ctx.cwd, p);
     if (rel === null) return deny(`writes must stay inside the task worktree (${ctx.cwd})`);
-    if (/^(\.git|\.nightshift)(\/|$)/.test(rel)) return deny("git internals and .nightshift/ are managed by Nightshift");
-    if (SECRET_PATH.test(" " + rel)) return deny("secrets files are never written");
+    if (/^(\.git|\.nightshift)([\/\\]|$)/.test(rel)) return deny("git internals and .nightshift/ are managed by Nightshift");
+    if (SECRET_PATH.test(" " + rel.replace(/\\/g, "/"))) return deny("secrets files are never written");
     return { allow: true };
   }
 
@@ -161,7 +161,8 @@ export function decide(tool: string, input: Record<string, unknown>, ctx: Policy
     if (!cmd.trim()) return deny("empty command");
     if (SECRET_PATH.test(" " + cmd)) return deny("secrets and credential files are never touched");
     for (const [re, why] of DENY_PATTERNS) if (re.test(cmd)) return deny(why);
-    if (cmd.includes(homedir() + "/") && !cmd.includes(ctx.cwd)) return deny("stay inside the task worktree");
+    const home = homedir().replace(/\\/g, "/");
+    if (cmd.replace(/\\/g, "/").includes(home + "/") && !cmd.replace(/\\/g, "/").includes(ctx.cwd.replace(/\\/g, "/"))) return deny("stay inside the task worktree");
     if (ctx.readOnly && READ_ONLY_DENY.test(stripData(cmd))) return deny("this role is read-only");
     const allowed = new Set(ctx.allowCommands);
     for (const w of commandWords(cmd)) {

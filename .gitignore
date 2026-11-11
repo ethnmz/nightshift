@@ -1,4 +1,3 @@
 node_modules/
-dashboard/dist/
 .nightshift/local/
 *.log

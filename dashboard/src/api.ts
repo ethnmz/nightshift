@@ -1,37 +1,92 @@
-// Types mirror src/daemon.ts snapshot() and src/server.ts responses.
+// Types mirror src/server.ts, src/setup.ts and src/daemon.ts snapshot().
 export type Readiness = "done" | "parked" | "running" | "stale" | "ready" | "waiting" | "blocked";
+export type OS = "mac" | "windows" | "linux";
+export type Agent = "claude" | "codex";
 
-export interface NodeSpec {
+export interface Member {
   id: string;
   name: string;
-  login?: string;
-  lanes: string[];
-  agent?: "claude" | "codex";
+  github: string;
+  os: OS;
+  agent: Agent;
+  roles: string;
+  model?: string;
+}
+export interface SetupData {
+  version: 1;
+  event: { name: string; track: string; deadline: string; links: string };
+  idea: { pitch: string; problem: string; demo: string; must: string; nice: string; stack: string; rules: string };
+  team: Member[];
+  rules: { perComputer: number; usageCap: number; review: boolean; stealing: boolean; contractsOwner: string; check: string };
+}
+export interface AppState {
+  project: { path: string; name: string; hasSetup: boolean; tasks: number; hasCommits: boolean; unshared: number } | null;
+  recent: string[];
+  me: string | null;
+  setup: SetupData | null;
+  board: { kind: string; issue: number | null; repo: string | null } | null;
+  night: string | null;
+  running: number | null;
+  live: boolean;
+  autoStart: boolean;
+  home: string;
+  sep: string;
+}
+export interface Tools {
+  os: OS;
+  node: string;
+  git: boolean;
+  bash: boolean;
+  gh: boolean;
+  ghLogin: string | null;
+  claude: { installed: boolean; loggedIn: boolean; subscription: boolean };
+  codex: { installed: boolean; loggedIn: boolean; subscription: boolean };
+}
+export interface Task {
+  id: string;
+  title: string;
+  lane: string;
+  role?: string;
+  brief?: string;
+  lease: string[];
+  depends_on?: string[];
+  contracts?: string[];
+  acceptance?: string[];
+}
+export interface TaskState {
+  status: "claimed" | "done" | "parked" | "open";
+  node: string;
+  at: number;
+  attempt: number;
+  note?: string;
+  merge?: string;
+}
+export interface TaskRow extends Task {
+  depends_on: string[];
+  readiness: Readiness;
+  state: TaskState | null;
+}
+export interface Envelope {
+  from: string;
+  to: string;
+  type: string;
+  task?: string;
+  body: Record<string, unknown>;
+  at: number;
+  night?: string;
+}
+export interface BoardRow {
+  id: string;
+  author: string;
+  createdAt: string;
+  text: string;
+  env?: Envelope;
 }
 export interface UsageInfo {
   status: "allowed" | "warning" | "limited";
   utilization?: number;
   window?: string;
   resetsAt?: number;
-}
-export interface TaskState {
-  status: "claimed" | "done" | "parked";
-  node: string;
-  at: number;
-  attempt: number;
-  note?: string;
-  merge?: string;
-  since?: number;
-}
-export interface TaskRow {
-  id: string;
-  title: string;
-  lane: string;
-  role: string;
-  depends_on: string[];
-  lease: string[];
-  readiness: Readiness;
-  state: TaskState | null;
 }
 export interface RunningRow {
   task: string;
@@ -43,32 +98,12 @@ export interface RunningRow {
   lastActivity: number;
   lastText: string;
   cost: number;
-  attempt: number;
-  stolen: boolean;
-  inboxWaiting: number;
 }
-export interface Envelope {
-  from: string;
-  to: string;
-  type: string;
-  task?: string;
-  body: Record<string, unknown>;
-  at: number;
-}
-export interface BoardRow {
+export interface NodeSpec {
   id: string;
-  author: string;
-  createdAt: string;
-  text: string;
-  env?: Envelope;
-}
-export interface LedgerEvent {
-  at: number;
-  node: string;
-  kind: string;
-  task?: string;
-  role?: string;
-  data?: Record<string, unknown>;
+  name: string;
+  lanes: string[];
+  agent?: Agent;
 }
 export interface Snapshot {
   node: NodeSpec;
@@ -76,44 +111,66 @@ export interface Snapshot {
   night: string;
   branch: string;
   project: string;
-  adapter: string;
   stopped: boolean;
   stopReason: string;
   finished: boolean;
   budget: { node_usd: number; team_usd: number };
   spent: Record<string, number>;
-  merges: number;
-  agent: "claude" | "codex" | "fake";
+  agent: Agent | "fake";
   auth: "subscription" | "api_key";
   pausedUntil: number;
   usage: Record<string, UsageInfo>;
-  adapterDefault?: string;
   tasks: TaskRow[];
   running: RunningRow[];
   live: boolean;
   daemonPid: number | null;
   board: BoardRow[];
-  ledger: LedgerEvent[];
 }
-export interface CheckResult {
+export interface Check {
   name: string;
   status: "pass" | "warn" | "fail";
   detail: string;
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(path, init);
+  const r = await fetch(path, { ...init, headers: { "content-type": "application/json" } });
   const body = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error((body as { errors?: string[]; error?: string }).errors?.join("\n") ?? (body as { error?: string }).error ?? r.statusText);
+  if (!r.ok) throw new Error((body as { error?: string }).error ?? r.statusText);
   return body as T;
 }
+const post = <T,>(path: string, body?: unknown) => req<T>(path, { method: "POST", body: JSON.stringify(body ?? {}) });
 
 export const api = {
+  app: () => req<AppState>("/api/app"),
+  tools: (refresh = false) => (refresh ? post<Tools>("/api/tools/refresh") : req<Tools>("/api/tools")),
+  open: (path: string) => post<{ path: string }>("/api/project/open", { path }),
+  create: (name: string, parent: string, description: string) => post<{ path: string }>("/api/project/create", { name, parent, description }),
+  clone: (url: string, parent: string) => post<{ path: string }>("/api/project/clone", { url, parent }),
+  pull: () => post("/api/project/pull"),
+  close: () => post("/api/project/close"),
+  practice: () => post("/api/practice"),
+  saveSetup: (s: SetupData) => req<{ setup: SetupData }>("/api/setup", { method: "PUT", body: JSON.stringify(s) }),
+  setMe: (node: string) => post("/api/me", { node }),
+  plan: (agent: Agent) => post("/api/plan", { agent }),
+  planStatus: () => req<{ running: boolean; log: string[]; ok?: boolean; error?: string }>("/api/plan"),
+  tasks: () => req<{ yaml: string; tasks: Task[] }>("/api/tasks"),
+  saveTasks: (b: { tasks?: Task[]; yaml?: string }) => req("/api/tasks", { method: "PUT", body: JSON.stringify(b) }),
+  sharePreview: () => req<{ files: string[]; repo: string | null }>("/api/share"),
+  share: () => post<{ steps: string[]; repo: string; link: string }>("/api/share"),
+  invite: (github: string) => post<{ note: string }>("/api/invite", { github }),
+  preflight: (live: boolean) => req<{ checks: Check[]; ok: boolean; posted: boolean }>(`/api/preflight?live=${live ? 1 : 0}`, { method: "POST" }),
+  autostart: (on: boolean) => post("/api/autostart", { on }),
+  start: (everyone: boolean) => post("/api/start", { everyone }),
+  stop: (team: boolean) => req(`/api/stop?team=${team ? 1 : 0}`, { method: "POST" }),
   snapshot: () => req<Snapshot>("/api/snapshot"),
-  plan: () => req<{ night: string; tasks: string; idea: string }>("/api/plan"),
-  savePlan: (b: { night?: string; tasks?: string; idea?: string }) => req<{ ok: boolean; note: string }>("/api/plan", { method: "PUT", body: JSON.stringify(b) }),
-  preflight: (live: boolean) => req<CheckResult[]>(`/api/preflight?live=${live ? 1 : 0}`, { method: "POST" }),
-  start: () => req<{ ok: boolean; pid: number }>("/api/start", { method: "POST" }),
-  stop: (team: boolean) => req<{ ok: boolean }>(`/api/stop?team=${team ? 1 : 0}`, { method: "POST" }),
   report: () => req<{ markdown: string; file: string }>("/api/report"),
+  openPr: () => post<{ url: string }>("/api/report/pr"),
+};
+
+export const EMPTY_SETUP: SetupData = {
+  version: 1,
+  event: { name: "", track: "", deadline: "", links: "" },
+  idea: { pitch: "", problem: "", demo: "", must: "", nice: "", stack: "", rules: "" },
+  team: [],
+  rules: { perComputer: 2, usageCap: 25, review: true, stealing: true, contractsOwner: "", check: "" },
 };

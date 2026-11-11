@@ -9,6 +9,8 @@
 import { z } from "zod";
 
 export const EnvelopeType = z.enum([
+  "ready", // a teammate's computer passed its checks
+  "go", // "start the night for everyone"
   "node_up",
   "node_down",
   "note",

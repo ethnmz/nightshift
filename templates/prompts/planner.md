@@ -1,17 +1,36 @@
 # Plan tonight's build
 
-You are the planner. The team (awake, for now) wrote the idea in `.nightshift/idea.md`. Turn it into a plan that {{node_count}} nodes of AI agents can build overnight **without any human**.
+You are the planner. The team (awake, for now) described the hackathon and the idea in `.nightshift/idea.md`. Read it carefully, including the challenge/track, deadline and rules. Turn it into a plan that {{node_count}} computers of AI coding agents can build overnight **without any human**.
 
-Teammates and their lanes:
+Teammates and their roles (each role is a lane; a task's `lane` must be one of these):
 {{nodes}}
 
 Produce, in this repository:
 
-1. **Contracts first** (this is what removes hours of overnight negotiation): API shapes, data model, and any cross-lane interfaces as docs (e.g. `docs/API.md`, `docs/DATA_MODEL.md`), plus typed stubs and fixtures so every lane can build against them from minute one.
-2. **`.nightshift/tasks.yaml`**: a DAG of small tasks (30–60 min of agent work each). Schema per task:
-   - `id` (T1, T2, …), `title`, `lane` (one of the lanes above), `brief` (self-contained: someone with no chat history can do it),
-   - `lease`: path globs the task may edit. **Tasks that can run at the same time must not have overlapping leases.**
-   - `depends_on`, `contracts` (files to read), `acceptance`: one-shot shell commands that prove it works (tests, build). No servers, no watchers.
-3. Put scaffolding (project skeleton, test setup) in early tasks that others depend on. Front-load each lane so all {{node_count}} nodes have work immediately. End with an integration/demo task.
+1. **Contracts first** (they remove hours of overnight negotiation): the API shapes, data model and any cross-lane interfaces as docs (for example `docs/API.md`, `docs/DATA_MODEL.md`), plus typed stubs and fixtures so every lane can build against them from minute one. Pick a stack from the idea; if it says nothing, choose something simple and common for the challenge, and record that choice.
+2. **`.nightshift/tasks.yaml`** with this shape:
 
-Rules: do not ask questions; record assumptions in `.nightshift/assumptions.md`. Write the files and finish with a one-paragraph summary.
+```yaml
+check: "<one-shot command that proves the whole project builds and its tests pass>"
+gate: { command: "<a fuller check, e.g. tests + build>", every: 3 }
+contracts: [docs/API.md, docs/DATA_MODEL.md]
+tasks:
+  - id: T1
+    title: Short title
+    lane: <one of the lanes above>
+    brief: |
+      Self-contained instructions: someone with no chat history can do it.
+    lease: ["path/globs/**"]      # the only files this task may change
+    depends_on: []
+    contracts: [docs/API.md]
+    acceptance: ["<one-shot command that proves this task works>"]
+```
+
+Rules for the plan:
+- Small tasks (30–60 minutes of agent work each). Front-load every lane so all {{node_count}} computers have work in the first hour.
+- **Tasks that can run at the same time must not have overlapping leases.**
+- Early tasks: project skeleton and test setup that others depend on. Last task: an end-to-end demo check.
+- Commands must be one-shot and non-interactive (no servers left running, no watchers, no prompts). They run in bash on Mac and Windows (Git Bash), so avoid OS-specific commands.
+- Stay inside the scope in idea.md; put nice-to-haves after must-haves.
+
+Do not ask questions; record assumptions in `.nightshift/assumptions.md`. Write the files and finish with a one-paragraph summary.

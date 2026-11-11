@@ -1041,6 +1041,7 @@ export class NightDaemon {
 export function makeBoard(cfg: NightConfig, root: string, cursorPath: string): Board {
   if (cfg.board.kind === "file") return new FileBoard(join(root, cfg.board.path), cursorPath);
   const repo = cfg.board.repo ?? repoFromRemote(root, cfg.remote);
+  if (!cfg.board.issue) throw new Error("the team board is not created yet: finish the Share step in the setup");
   return new GitHubIssueBoard(repo, cfg.board.issue, cursorPath);
 }
 

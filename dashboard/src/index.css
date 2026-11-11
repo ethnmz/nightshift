@@ -17,3 +17,9 @@ html, body { background: var(--color-night-950); }
 .scroll-thin::-webkit-scrollbar-thumb { background: #33456b; border-radius: 8px; }
 @keyframes pulse-dot { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
 .pulse-dot { animation: pulse-dot 1.6s ease-in-out infinite; }
+@keyframes dash-flow { to { stroke-dashoffset: -24 } }
+.dash-flow { animation: dash-flow 0.8s linear infinite; }
+@keyframes packet-fade { 0% { opacity: 0 } 10% { opacity: 1 } 75% { opacity: 1 } 100% { opacity: 0 } }
+.packet { animation: packet-fade 3.2s ease forwards; }
+@keyframes spin-slow { to { transform: rotate(360deg) } }
+.spin-slow { animation: spin-slow 6s linear infinite; }
