@@ -52,15 +52,15 @@ export default function App() {
   const name = app.setup?.event.name || app.project.name;
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-20 bg-night-950/85 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3 sm:px-6">
+      <header className="sticky top-0 z-20 border-b border-night-700 bg-night-950/90 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center gap-3 px-5 py-3 sm:px-8">
           <button onClick={async () => (await api.close(), await reload(), setTab(null))} className="flex items-center gap-2" title="Switch project">
-            <Moon className="h-5 w-5 text-amber-300" />
-            <span className="max-w-[40vw] truncate font-semibold text-white">{name}</span>
+            <Moon className="h-5 w-5 text-cream" />
+            <span className="max-w-[40vw] truncate font-medium text-cream">{name}</span>
           </button>
-          <nav className="ml-auto flex gap-1 rounded-xl bg-night-900 p-1 text-sm">
+          <nav className="ml-auto flex gap-1 text-[13px]">
             {(["setup", "tonight", "morning"] as Tab[]).map((t) => (
-              <button key={t} onClick={() => setTab(t)} className={`rounded-lg px-3 py-1.5 capitalize transition sm:px-4 ${current === t ? "bg-night-700 text-white" : "text-slate-400 hover:text-slate-200"}`}>
+              <button key={t} onClick={() => setTab(t)} className={`rounded-full px-3.5 py-1.5 capitalize transition ${current === t ? "bg-cream text-night-950" : "text-neutral-400 hover:text-white"}`}>
                 {t}
                 {t === "tonight" && app.running && <span className="pulse-dot ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-indigo-300 align-middle" />}
               </button>
@@ -68,7 +68,7 @@ export default function App() {
           </nav>
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 pb-16 pt-4 sm:px-6">
+      <main className="mx-auto max-w-6xl px-5 pb-20 pt-8 sm:px-8">
         {current === "setup" && <SetupWizard app={app} reload={reload} goTonight={() => setTab("tonight")} />}
         {current === "tonight" && <Tonight app={app} reload={reload} />}
         {current === "morning" && <Morning />}

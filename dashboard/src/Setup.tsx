@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, AppState, Check, EMPTY_SETUP, Member, OS, SetupData, Task, Tools, Agent, Snapshot } from "./api";
-import { Button, Card, Code, Copy, Field, Input, Note, Segmented, Text, Toggle, agentLabel, initials } from "./ui";
+import { Button, Card, Code, Copy, Field, Input, Note, Segmented, Text, Toggle, Title, agentLabel, initials } from "./ui";
 
 const STEPS = [
   { id: "event", label: "Hackathon", lead: true },
@@ -54,14 +54,14 @@ export function SetupWizard({ app, reload, goTonight }: { app: AppState; reload:
   };
 
   return (
-    <div className="grid gap-6 md:grid-cols-[180px_1fr]">
-      <ol className="flex gap-1 overflow-x-auto md:flex-col md:gap-0.5">
+    <div className="grid gap-8 md:grid-cols-[200px_1fr]">
+      <ol className="flex overflow-x-auto border-night-700 md:flex-col md:border-t">
         {STEPS.map((x, i) => (
-          <li key={x.id}>
-            <button onClick={() => setStep(x.id)} className={`flex w-full items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-2 text-left text-sm transition ${step === x.id ? "bg-night-800 text-white" : "text-slate-400 hover:text-slate-200"}`}>
-              <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] ${i < idx ? "bg-indigo-500 text-white" : step === x.id ? "bg-white text-night-950" : "bg-night-800 text-slate-400"}`}>{i < idx ? "✓" : i + 1}</span>
+          <li key={x.id} className="md:border-b md:border-night-700">
+            <button onClick={() => setStep(x.id)} className={`flex w-full items-center gap-3 whitespace-nowrap px-3 py-3 text-left text-sm transition ${step === x.id ? "bg-night-850 text-cream" : "text-neutral-500 hover:text-neutral-200"}`}>
+              <span className={`font-mono text-[11px] ${i < idx ? "text-copper" : step === x.id ? "text-cream" : "text-neutral-600"}`}>{i < idx ? "✓ " : ""}{String(i + 1).padStart(2, "0")}</span>
               {x.label}
-              {x.lead && joined && <span className="text-[10px] text-slate-600">lead</span>}
+              {x.lead && joined && <span className="ml-auto text-[10px] text-neutral-600">lead</span>}
             </button>
           </li>
         ))}
@@ -164,12 +164,12 @@ function TeamStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) {
       <Head title="Who's on the team?" sub="Each person's computer runs their own coding agent overnight, on their own subscription." />
       <div className="space-y-3">
         {team.map((m, i) => (
-          <div key={i} className="rounded-xl bg-night-950/60 p-4 ring-1 ring-white/5">
+          <div key={i} className="rounded-md bg-[#0e0e0e] p-4 border border-night-700">
             <div className="flex items-center gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-night-800 text-xs font-semibold text-slate-200">{initials(m.name || "?")}</span>
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-night-600 text-xs font-medium text-cream">{initials(m.name || "?")}</span>
               <Input placeholder="Name" value={m.name} onChange={(e) => set(i, { name: e.target.value })} className="flex-1" />
               <Input placeholder="GitHub username" value={m.github} onChange={(e) => set(i, { github: e.target.value.replace(/^@/, "") })} className="w-40 sm:w-48" />
-              <button onClick={() => setS({ ...s, team: team.filter((_, j) => j !== i) })} className="px-1 text-slate-500 hover:text-red-300" title="Remove">
+              <button onClick={() => setS({ ...s, team: team.filter((_, j) => j !== i) })} className="px-1 text-neutral-500 hover:text-red-300" title="Remove">
                 ✕
               </button>
             </div>
@@ -181,7 +181,7 @@ function TeamStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) {
             {!m.roles && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {ROLE_IDEAS.map((r) => (
-                  <button key={r} onClick={() => set(i, { roles: r })} className="rounded-full bg-white/5 px-2.5 py-0.5 text-xs text-slate-400 hover:bg-white/10 hover:text-slate-200">
+                  <button key={r} onClick={() => set(i, { roles: r })} className="rounded-sm border border-night-600 px-2 py-0.5 text-xs text-neutral-400 hover:border-cream/50 hover:text-cream">
                     {r}
                   </button>
                 ))}
@@ -207,7 +207,7 @@ function RulesStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) 
         <Toggle on={s.rules.review} onChange={(v) => r("review", v)} label="A second agent reviews every change" hint="Recommended. Catches mistakes before they merge." />
         <Toggle on={s.rules.stealing} onChange={(v) => r("stealing", v)} label="Idle computers help other teammates' areas" hint="If someone's list runs dry, they pick up waiting work from others." />
       </div>
-      <div className="rounded-xl bg-night-950/60 p-4 text-sm text-slate-300 ring-1 ring-white/5">
+      <div className="rounded-md bg-[#0e0e0e] p-4 text-sm text-neutral-300 border border-night-700">
         Always on: agents post on the team board, merge finished work into a <b className="text-white">night branch</b> (never main), and write down every decision they make for you to review in the morning.
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
@@ -219,7 +219,7 @@ function RulesStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) 
         </Field>
       </div>
       <Field label="Who owns shared contracts?" hint="their agent applies API/data changes others ask for">
-        <select value={s.rules.contractsOwner} onChange={(e) => r("contractsOwner", e.target.value)} className="w-full rounded-xl bg-night-950 px-3.5 py-2.5 text-sm text-slate-100 ring-1 ring-white/10">
+        <select value={s.rules.contractsOwner} onChange={(e) => r("contractsOwner", e.target.value)} className="w-full rounded-md bg-night-950 px-3.5 py-2.5 text-sm text-neutral-100 border border-night-600">
           <option value="">{s.team[0]?.name ? `${s.team[0].name} (default)` : "First teammate"}</option>
           {s.team.map((m) => (
             <option key={m.id || m.name} value={m.id}>
@@ -288,15 +288,15 @@ function PlanStep({ app, s }: { app: AppState; s: SetupData }) {
         <Button onClick={generate} busy={job.running}>
           {tasks?.length ? "Regenerate plan" : "Generate the plan"}
         </Button>
-        <span className="text-xs text-slate-500">Uses {lead?.name ? `${lead.name}'s` : "your"} {agentLabel(lead?.agent)} subscription. Takes a few minutes.</span>
+        <span className="text-xs text-neutral-500">Uses {lead?.name ? `${lead.name}'s` : "your"} {agentLabel(lead?.agent)} subscription. Takes a few minutes.</span>
         {tasks && tasks.length > 0 && (
-          <button onClick={async () => setAsText(asText === null ? (await api.tasks()).yaml : null)} className="ml-auto text-xs text-slate-400 hover:text-slate-200">
+          <button onClick={async () => setAsText(asText === null ? (await api.tasks()).yaml : null)} className="ml-auto text-xs text-neutral-400 hover:text-neutral-200">
             {asText === null ? "Edit as text" : "Back to cards"}
           </button>
         )}
       </div>
       {job.running && (
-        <div className="max-h-40 overflow-auto rounded-xl bg-night-950 p-3 font-mono text-xs text-slate-400">
+        <div className="max-h-40 overflow-auto rounded-md bg-night-950 p-3 font-mono text-xs text-neutral-400">
           {job.log.map((l, i) => (
             <div key={i}>{l}</div>
           ))}
@@ -330,24 +330,24 @@ function PlanStep({ app, s }: { app: AppState; s: SetupData }) {
             {[...new Set([...lanes, ...tasks.map((t) => t.lane)])].map((lane) => (
               <div key={lane}>
                 <div className="mb-2 flex items-baseline gap-2">
-                  <span className="font-medium capitalize text-white">{lane.replace(/-/g, " ")}</span>
-                  <span className="text-xs text-slate-500">{owner(lane)}</span>
+                  <span className="font-light capitalize text-cream">{lane.replace(/-/g, " ")}</span>
+                  <span className="text-xs text-neutral-500">{owner(lane)}</span>
                 </div>
                 <div className="space-y-1.5">
                   {tasks
                     .filter((t) => t.lane === lane)
                     .map((t) => (
-                      <div key={t.id} className="rounded-xl bg-night-950/60 ring-1 ring-white/5">
+                      <div key={t.id} className="rounded-md bg-[#0e0e0e] border border-night-700">
                         <button onClick={() => setOpen(open === t.id ? null : t.id)} className="flex w-full items-center gap-2 px-3 py-2 text-left">
-                          <span className="text-[11px] font-semibold text-slate-500">{t.id}</span>
-                          <span className="flex-1 text-sm text-slate-200">{t.title}</span>
-                          {t.depends_on?.length ? <span className="text-[11px] text-slate-600">after {t.depends_on.join(", ")}</span> : null}
+                          <span className="text-[11px] font-semibold text-neutral-500">{t.id}</span>
+                          <span className="flex-1 text-sm text-neutral-200">{t.title}</span>
+                          {t.depends_on?.length ? <span className="text-[11px] text-neutral-600">after {t.depends_on.join(", ")}</span> : null}
                         </button>
                         {open === t.id && (
-                          <div className="space-y-2 border-t border-white/5 p-3">
+                          <div className="space-y-2 border-t border-night-700 p-3">
                             <Input value={t.title} onChange={(e) => update(t.id, { title: e.target.value })} />
                             <Text rows={5} value={t.brief ?? ""} onChange={(e) => update(t.id, { brief: e.target.value })} />
-                            <div className="text-[11px] text-slate-500">Can change: {t.lease.join(", ")}</div>
+                            <div className="text-[11px] text-neutral-500">Can change: {t.lease.join(", ")}</div>
                             <div className="flex gap-2">
                               <Button kind="soft" onClick={() => saveTasks(tasks)}>
                                 Save
@@ -366,7 +366,7 @@ function PlanStep({ app, s }: { app: AppState; s: SetupData }) {
           </div>
         )
       )}
-      {tasks && !tasks.length && !job.running && <p className="text-sm text-slate-500">No tasks yet. Generate the plan, or use "Edit as text" after generating to write your own.</p>}
+      {tasks && !tasks.length && !job.running && <p className="text-sm text-neutral-500">No tasks yet. Generate the plan, or use "Edit as text" after generating to write your own.</p>}
     </Card>
   );
 }
@@ -401,29 +401,29 @@ function ShareStep({ app, s, reload }: { app: AppState; s: SetupData; reload: ()
   return (
     <Card className="space-y-5">
       <Head title="Share with the team" sub="This saves the plan to GitHub and creates the team's message board, where agents talk overnight." />
-      {pre && pre.files.length > 0 && <div className="text-sm text-slate-400">{pre.files.length} new or changed file{pre.files.length === 1 ? "" : "s"} will be pushed to {pre.repo ?? "GitHub"}.</div>}
+      {pre && pre.files.length > 0 && <div className="text-sm text-neutral-400">{pre.files.length} new or changed file{pre.files.length === 1 ? "" : "s"} will be pushed to {pre.repo ?? "GitHub"}.</div>}
       <Button onClick={share} busy={busy}>
         {app.board?.issue ? "Push the latest plan" : "Share the plan"}
       </Button>
       {res && <Note kind={res.ok ? "ok" : "error"}>{res.t}</Note>}
       {app.board?.issue && repoLink && (
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-neutral-400">
           Team board:{" "}
           <a className="text-indigo-300 hover:underline" href={`${repoLink}/issues/${app.board.issue}`} target="_blank" rel="noreferrer">
             issue #{app.board.issue}
           </a>
         </p>
       )}
-      <div className="space-y-2 border-t border-white/5 pt-5">
+      <div className="space-y-2 border-t border-night-700 pt-5">
         <div className="text-sm font-medium text-white">Give teammates access</div>
         {s.team
           .filter((m) => m.github)
           .map((m) => (
             <div key={m.id} className="flex items-center gap-3 text-sm">
-              <span className="w-32 truncate text-slate-200">{m.name}</span>
-              <span className="flex-1 text-slate-500">@{m.github}</span>
+              <span className="w-32 truncate text-neutral-200">{m.name}</span>
+              <span className="flex-1 text-neutral-500">@{m.github}</span>
               {invites[m.id] ? (
-                <span className="text-xs text-emerald-300">{invites[m.id]}</span>
+                <span className="text-xs text-copper">{invites[m.id]}</span>
               ) : (
                 <Button
                   kind="soft"
@@ -441,14 +441,14 @@ function ShareStep({ app, s, reload }: { app: AppState; s: SetupData; reload: ()
               )}
             </div>
           ))}
-        {!s.team.some((m) => m.github) && <p className="text-sm text-slate-500">Add GitHub usernames in the Team step to invite people from here.</p>}
+        {!s.team.some((m) => m.github) && <p className="text-sm text-neutral-500">Add GitHub usernames in the Team step to invite people from here.</p>}
       </div>
-      <div className="space-y-2 border-t border-white/5 pt-5">
+      <div className="space-y-2 border-t border-night-700 pt-5">
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium text-white">Send this to your teammates</span>
           <Copy text={message} label="Copy message" />
         </div>
-        <pre className="whitespace-pre-wrap rounded-xl bg-night-950 p-4 text-xs leading-relaxed text-slate-300">{message}</pre>
+        <pre className="whitespace-pre-wrap rounded-md bg-night-950 p-4 text-xs leading-relaxed text-neutral-300">{message}</pre>
       </div>
     </Card>
   );
@@ -511,7 +511,7 @@ function ComputerStep({ app, s, reload }: { app: AppState; s: SetupData; reload:
                 await api.setMe(m.id);
                 await reload();
               }}
-              className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm ring-1 transition ${app.me === m.id ? "bg-indigo-500/20 text-white ring-indigo-400" : "bg-night-950/60 text-slate-300 ring-white/5 hover:ring-white/20"}`}
+              className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ring-1 transition ${app.me === m.id ? "bg-cream text-night-950 border-cream" : "bg-[#0e0e0e] text-neutral-300 ring-white/5 hover:ring-white/20"}`}
             >
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-night-800 text-[10px] font-semibold">{initials(m.name)}</span>
               {m.name}
@@ -524,16 +524,16 @@ function ComputerStep({ app, s, reload }: { app: AppState; s: SetupData; reload:
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-white">What this computer needs</span>
-              <button onClick={async () => setTools(await api.tools(true))} className="text-xs text-slate-400 hover:text-slate-200">
+              <button onClick={async () => setTools(await api.tools(true))} className="text-xs text-neutral-400 hover:text-neutral-200">
                 Check again
               </button>
             </div>
-            {!tools && <div className="text-sm text-slate-500">Checking…</div>}
+            {!tools && <div className="text-sm text-neutral-500">Checking…</div>}
             {items.map((it) => (
-              <div key={it.k} className="rounded-xl bg-night-950/60 p-3 ring-1 ring-white/5">
+              <div key={it.k} className="rounded-md bg-[#0e0e0e] p-3 border border-night-700">
                 <div className="flex items-center gap-2 text-sm">
-                  <span className={it.ok ? "text-emerald-400" : "text-amber-300"}>{it.ok ? "✓" : "○"}</span>
-                  <span className="text-slate-200">{it.label}</span>
+                  <span className={it.ok ? "text-copper" : "text-amber-300"}>{it.ok ? "✓" : "○"}</span>
+                  <span className="text-neutral-200">{it.label}</span>
                 </div>
                 {!it.ok && <div className="mt-2"><Code>{INSTALL[os][it.k]}</Code></div>}
               </div>
@@ -541,8 +541,8 @@ function ComputerStep({ app, s, reload }: { app: AppState; s: SetupData; reload:
             {ghMismatch && <Note kind="warn">GitHub CLI is signed in as {tools!.ghLogin}, but the team list says {me.github}. Sign in as yourself (gh auth login) so the agents can see each other.</Note>}
             {me.os !== os && <Note kind="warn">The team list says {me.name} uses {me.os}, but this computer is {os}. That's fine. Update it in the Team step if you like.</Note>}
           </div>
-          <div className="space-y-3 border-t border-white/5 pt-5">
-            <div className="text-sm text-slate-400">The final check catches anything that would stop the night at 3 a.m.: power, sleep, GitHub access, and a real test call to your agent.</div>
+          <div className="space-y-3 border-t border-night-700 pt-5">
+            <div className="text-sm text-neutral-400">The final check catches anything that would stop the night at 3 a.m.: power, sleep, GitHub access, and a real test call to your agent.</div>
             <Button
               busy={busy}
               onClick={async () => {
@@ -565,9 +565,9 @@ function ComputerStep({ app, s, reload }: { app: AppState; s: SetupData; reload:
                   .filter((c) => c.status !== "pass" || /login|live|power|push|board/i.test(c.name))
                   .map((c) => (
                     <div key={c.name} className="flex gap-2 text-sm">
-                      <span className={c.status === "pass" ? "text-emerald-400" : c.status === "warn" ? "text-amber-300" : "text-red-400"}>{c.status === "pass" ? "✓" : c.status === "warn" ? "!" : "✕"}</span>
+                      <span className={c.status === "pass" ? "text-copper" : c.status === "warn" ? "text-amber-300" : "text-red-400"}>{c.status === "pass" ? "✓" : c.status === "warn" ? "!" : "✕"}</span>
                       <span>
-                        <span className="text-slate-200">{c.name}</span> <span className="text-slate-500">· {c.detail}</span>
+                        <span className="text-neutral-200">{c.name}</span> <span className="text-neutral-500">· {c.detail}</span>
                       </span>
                     </div>
                   ))}
@@ -615,12 +615,12 @@ function StartStep({ app, reload, goTonight }: { app: AppState; reload: () => Pr
       <Head title="Start the night" sub="Leave your computer plugged in with the lid open. Nobody will be asked anything until morning." />
       <div className="grid gap-2 sm:grid-cols-2">
         {(snap?.nodes ?? []).map((n) => (
-          <div key={n.id} className="flex items-center gap-3 rounded-xl bg-night-950/60 px-3 py-2.5 ring-1 ring-white/5">
+          <div key={n.id} className="flex items-center gap-3 rounded-md bg-[#0e0e0e] px-3 py-2.5 border border-night-700">
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-night-800 text-xs font-semibold">{initials(n.name)}</span>
-            <span className="flex-1 text-sm text-slate-200">
-              {n.name} <span className="text-slate-500">· {agentLabel(n.agent)}</span>
+            <span className="flex-1 text-sm text-neutral-200">
+              {n.name} <span className="text-neutral-500">· {agentLabel(n.agent)}</span>
             </span>
-            <span className={`text-xs ${up.has(n.id) ? "text-indigo-300" : finished.has(n.id) || ready.has(n.id) ? "text-emerald-300" : "text-slate-500"}`}>{up.has(n.id) ? "running" : finished.has(n.id) ? "finished" : ready.has(n.id) ? "ready" : "not checked yet"}</span>
+            <span className={`text-xs ${up.has(n.id) ? "text-indigo-300" : finished.has(n.id) || ready.has(n.id) ? "text-copper" : "text-neutral-500"}`}>{up.has(n.id) ? "running" : finished.has(n.id) ? "finished" : ready.has(n.id) ? "ready" : "not checked yet"}</span>
           </div>
         ))}
       </div>
@@ -655,10 +655,14 @@ function StartStep({ app, reload, goTonight }: { app: AppState; reload: () => Pr
 }
 
 function Head({ title, sub }: { title: string; sub: string }) {
-  return (
-    <div>
-      <h2 className="text-xl font-semibold text-white">{title}</h2>
-      <p className="mt-1 text-sm text-slate-400">{sub}</p>
-    </div>
-  );
+  const tag: Record<string, string> = {
+    "Tell us about the hackathon": "Step 1 · Hackathon",
+    "Who's on the team?": "Step 2 · Team",
+    "Overnight rules": "Step 3 · Rules",
+    "Tonight's plan": "Step 4 · Plan",
+    "Share with the team": "Step 5 · Share",
+    "Set up this computer": "Step 6 · Your computer",
+    "Start the night": "Step 7 · Start",
+  };
+  return <Title tag={tag[title]} title={title} sub={sub} />;
 }

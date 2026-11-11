@@ -14,12 +14,12 @@ function place(n: number, i: number) {
 
 type Kind = "merge" | "handoff" | "ask" | "answer" | "release" | "note";
 const KIND: Record<Kind, { color: string; label: string }> = {
-  merge: { color: "#34d399", label: "merged" },
-  handoff: { color: "#fbbf24", label: "unblocked" },
-  ask: { color: "#67e8f9", label: "asks" },
-  answer: { color: "#a5f3fc", label: "answers" },
-  release: { color: "#fb923c", label: "hands off" },
-  note: { color: "#c4b5fd", label: "note" },
+  merge: { color: "#ecebe4", label: "merged" },
+  handoff: { color: "#d98b45", label: "unblocked" },
+  ask: { color: "#8fb8de", label: "asks" },
+  answer: { color: "#b9d4ec", label: "answers" },
+  release: { color: "#e8b04f", label: "hands off" },
+  note: { color: "#b8a6e0", label: "note" },
 };
 interface Packet {
   key: string;
@@ -163,7 +163,7 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
   }, [snap?.nodes]);
 
   if (err && !snap) return <Note>{err.includes("setup") ? "Finish the setup first (share the plan and set up this computer), then come back here." : err}</Note>;
-  if (!snap) return <div className="py-20 text-center text-slate-500">Loading…</div>;
+  if (!snap) return <div className="py-20 text-center text-neutral-500">Loading…</div>;
 
   const done = snap.tasks.filter((t) => t.readiness === "done").length;
   const parked = snap.tasks.filter((t) => t.readiness === "parked").length;
@@ -191,18 +191,18 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
     <div className="space-y-5">
       <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
         <div>
-          <div className="text-3xl font-semibold tabular-nums text-white">
+          <div className="text-5xl font-light tabular-nums text-cream">
             {done}
-            <span className="text-lg text-slate-500"> / {snap.tasks.length} merged</span>
+            <span className="text-2xl text-neutral-500"> / {snap.tasks.length} merged</span>
           </div>
-          <div className="text-sm text-slate-400">
+          <div className="text-sm text-neutral-400">
             Night of {snap.night}
             {parked ? ` · ${parked} set aside for the morning` : ""}
             {snap.agent !== "fake" && snap.auth === "subscription" ? ` · est. usage $${spent.toFixed(2)} (not billed)` : ""}
           </div>
         </div>
-        <div className="h-2 min-w-40 flex-1 overflow-hidden rounded-full bg-night-800">
-          <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${(done / Math.max(1, snap.tasks.length)) * 100}%` }} />
+        <div className="h-1 min-w-40 flex-1 overflow-hidden rounded-full bg-night-700">
+          <div className="h-full rounded-full bg-copper transition-all" style={{ width: `${(done / Math.max(1, snap.tasks.length)) * 100}%` }} />
         </div>
         <div className="relative">
           {running ? (
@@ -213,8 +213,8 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
             <span className="text-sm text-emerald-300">Night finished. See Morning.</span>
           ) : null}
           {stopOpen && (
-            <div className="absolute right-0 z-10 mt-1 w-56 space-y-1 rounded-xl bg-night-850 p-2 shadow-xl ring-1 ring-white/10">
-              <button className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-white/5" onClick={async () => (await api.stop(false), setStopOpen(false), void reload())}>
+            <div className="absolute right-0 z-10 mt-1 w-56 space-y-1 rounded-md border border-night-600 bg-night-850 p-2 shadow-xl">
+              <button className="w-full rounded-lg px-3 py-2 text-left text-sm text-neutral-200 hover:bg-white/5" onClick={async () => (await api.stop(false), setStopOpen(false), void reload())}>
                 Stop this computer
               </button>
               <button className="w-full rounded-lg px-3 py-2 text-left text-sm text-red-300 hover:bg-red-500/10" onClick={async () => (await api.stop(true), setStopOpen(false), void reload())}>
@@ -225,24 +225,25 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
         </div>
       </div>
 
-      <Card className="overflow-hidden p-0 sm:p-0">
-        <svg viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full">
+      <Card className="relative overflow-hidden bg-[#141414] p-0 sm:p-0">
+        <div className="copper-grid pointer-events-none absolute inset-0" />
+        <svg viewBox={`0 0 ${W} ${H}`} className="relative block h-auto w-full">
           <defs>
             <radialGradient id="hubglow">
-              <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.35" />
-              <stop offset="100%" stopColor="#fbbf24" stopOpacity="0" />
+              <stop offset="0%" stopColor="#d98b45" stopOpacity="0.28" />
+              <stop offset="100%" stopColor="#d98b45" stopOpacity="0" />
             </radialGradient>
           </defs>
           {/* spokes */}
           {snap.nodes.map((n) => {
             const p = positions.get(n.id)!;
-            return <line key={n.id} x1={p.x} y1={p.y} x2={HUB.x} y2={HUB.y} stroke="white" strokeOpacity="0.05" strokeWidth="1.5" />;
+            return <line key={n.id} x1={p.x} y1={p.y} x2={HUB.x} y2={HUB.y} stroke="#ecebe4" strokeOpacity="0.08" strokeWidth="1" />;
           })}
           {/* hub: the shared night branch */}
           <circle cx={HUB.x} cy={HUB.y} r="70" fill="url(#hubglow)" />
-          <circle cx={HUB.x} cy={HUB.y} r="34" fill="#16213a" stroke="#fbbf24" strokeOpacity="0.5" />
-          <path transform={`translate(${HUB.x - 12} ${HUB.y - 16}) scale(0.8)`} d="M20 4a12 12 0 1 0 8 20A10 10 0 0 1 20 4z" fill="#fbbf24" />
-          <text x={HUB.x} y={HUB.y + 54} textAnchor="middle" className="fill-slate-400" fontSize="12">
+          <circle cx={HUB.x} cy={HUB.y} r="34" fill="#1c1c1c" stroke="#d98b45" strokeOpacity="0.8" />
+          <path transform={`translate(${HUB.x - 12} ${HUB.y - 16}) scale(0.8)`} d="M20 4a12 12 0 1 0 8 20A10 10 0 0 1 20 4z" fill="#ecebe4" />
+          <text x={HUB.x} y={HUB.y + 54} textAnchor="middle" fill="#8a8a85" fontSize="11" fontFamily="JetBrains Mono, monospace">
             night branch · {done} merged
           </text>
 
@@ -267,7 +268,7 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
                 <circle r="7" fill={k.color}>
                   <animateMotion dur="1.5s" fill="freeze" path={d} keyPoints="0;1" keyTimes="0;1" calcMode="spline" keySplines="0.4 0 0.2 1" />
                 </circle>
-                <text x={cx} y={cy - 8} textAnchor="middle" fontSize="12" fontWeight="600" fill={k.color} stroke="#0c1222" strokeWidth="4" paintOrder="stroke" className="packet-label">
+                <text x={cx} y={cy - 8} textAnchor="middle" fontSize="12" fontWeight="600" fill={k.color} stroke="#141414" strokeWidth="4" paintOrder="stroke" className="packet-label">
                   {pk.label}
                 </text>
               </g>
@@ -278,24 +279,24 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
           {snap.nodes.map((n) => {
             const p = positions.get(n.id)!;
             const st = statusOf(n);
-            const ring = { working: "#818cf8", paused: "#fbbf24", finished: "#34d399", idle: "#64748b", offline: "#334155" }[st.key];
+            const ring = { working: "#d98b45", paused: "#e8b04f", finished: "#ecebe4", idle: "#5a5a55", offline: "#333333" }[st.key];
             return (
               <g key={n.id} opacity={st.key === "offline" ? 0.55 : 1}>
                 {st.key === "working" && <circle cx={p.x} cy={p.y} r="40" fill="none" stroke={ring} strokeWidth="2" strokeDasharray="10 8" className="spin-slow" style={{ transformOrigin: `${p.x}px ${p.y}px` }} />}
-                <circle cx={p.x} cy={p.y} r="32" fill="#111a2e" stroke={ring} strokeWidth="2.5" />
-                <text x={p.x} y={p.y + 5} textAnchor="middle" fontSize="15" fontWeight="600" fill="#e2e8f0">
+                <circle cx={p.x} cy={p.y} r="32" fill="#171717" stroke={ring} strokeWidth="1.5" />
+                <text x={p.x} y={p.y + 5} textAnchor="middle" fontSize="15" fontWeight="500" fill="#ecebe4">
                   {initials(n.name)}
                 </text>
-                <text x={p.x} y={p.y + 54} textAnchor="middle" fontSize="13" fontWeight="600" fill="#f1f5f9">
-                  {n.name} <tspan fill="#94a3b8" fontWeight="400">· {agentLabel(n.agent ?? snap.agent)}</tspan>
+                <text x={p.x} y={p.y + 54} textAnchor="middle" fontSize="13" fontWeight="500" fill="#ecebe4">
+                  {n.name} <tspan fill="#8a8a85" fontWeight="400">· {agentLabel(n.agent ?? snap.agent)}</tspan>
                 </text>
-                <text x={p.x} y={p.y + 71} textAnchor="middle" fontSize="11.5" fill={st.key === "paused" ? "#fbbf24" : "#94a3b8"}>
+                <text x={p.x} y={p.y + 71} textAnchor="middle" fontSize="11.5" fill={st.key === "paused" ? "#e8b04f" : "#8a8a85"}>
                   {st.text.length > 38 ? st.text.slice(0, 36) + "…" : st.text}
                 </text>
                 {st.working.length > 1 && (
                   <g>
-                    <circle cx={p.x + 26} cy={p.y - 24} r="10" fill="#818cf8" />
-                    <text x={p.x + 26} y={p.y - 20} textAnchor="middle" fontSize="11" fontWeight="700" fill="#0c1222">
+                    <circle cx={p.x + 26} cy={p.y - 24} r="10" fill="#d98b45" />
+                    <text x={p.x + 26} y={p.y - 20} textAnchor="middle" fontSize="11" fontWeight="700" fill="#111111">
                       {st.working.length}
                     </text>
                   </g>
@@ -304,7 +305,7 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
             );
           })}
         </svg>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-white/5 px-5 py-3 text-xs text-slate-400">
+        <div className="relative flex flex-wrap gap-x-5 gap-y-1 border-t border-night-700 bg-night-900 px-5 py-3 text-xs text-neutral-400">
           {(Object.keys(KIND) as Kind[]).map((k) => (
             <span key={k} className="flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full" style={{ background: KIND[k].color }} />
@@ -316,20 +317,20 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
 
       <div className="grid gap-5 md:grid-cols-[1fr_1fr]">
         <Card>
-          <div className="mb-3 text-sm font-medium text-white">What just happened</div>
+          <div className="mb-4 text-lg font-light text-cream">What just happened</div>
           <ul className="space-y-2.5">
             {feed.map(({ m, s }) => (
               <li key={m.id} className="flex gap-3 text-sm">
-                <span className="w-10 shrink-0 text-xs tabular-nums text-slate-500">{ago(Date.parse(m.createdAt))}</span>
-                <span className="text-slate-300">{s}</span>
+                <span className="w-10 shrink-0 text-xs tabular-nums text-neutral-500">{ago(Date.parse(m.createdAt))}</span>
+                <span className="text-neutral-300">{s}</span>
               </li>
             ))}
-            {!feed.length && <li className="text-sm text-slate-500">Nothing yet. Once a computer starts, its agents' updates show up here.</li>}
+            {!feed.length && <li className="text-sm text-neutral-500">Nothing yet. Once a computer starts, its agents' updates show up here.</li>}
           </ul>
         </Card>
         <Card>
           <button onClick={() => setShowAll(!showAll)} className="mb-3 flex w-full items-center text-sm font-medium text-white">
-            All tasks <span className="ml-auto text-xs font-normal text-slate-500">{showAll ? "hide" : "show"}</span>
+            <span className="text-lg font-light text-cream">All tasks</span> <span className="ml-auto text-xs font-normal text-neutral-500">{showAll ? "hide" : "show"}</span>
           </button>
           <TaskList tasks={snap.tasks} nodes={snap.nodes} compact={!showAll} />
         </Card>
@@ -345,14 +346,14 @@ function TaskList({ tasks, nodes, compact }: { tasks: TaskRow[]; nodes: NodeSpec
       {shown.map((t) => (
         <li key={t.id} className="flex items-center gap-2.5 text-sm">
           <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS[t.readiness].dot}`} />
-          <span className="truncate text-slate-300">{t.title}</span>
+          <span className="truncate text-neutral-300">{t.title}</span>
           <span className={`ml-auto shrink-0 text-xs ${STATUS[t.readiness].text}`}>
             {STATUS[t.readiness].label}
             {t.state?.node && t.readiness !== "waiting" ? ` · ${nodes.find((n) => n.id === t.state!.node)?.name ?? t.state.node}` : ""}
           </span>
         </li>
       ))}
-      {compact && !shown.length && <li className="text-sm text-slate-500">Nothing in progress right now.</li>}
+      {compact && !shown.length && <li className="text-sm text-neutral-500">Nothing in progress right now.</li>}
     </ul>
   );
 }

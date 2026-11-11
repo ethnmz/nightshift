@@ -1,20 +1,42 @@
 @import "tailwindcss";
 
+/* Visual language: dark Retool site. Warm near-black, hairline dividers, light large type,
+   cream pill buttons, copper accent lines. */
 @theme {
-  --color-night-950: #070b16;
-  --color-night-900: #0c1222;
-  --color-night-850: #111a2e;
-  --color-night-800: #16213a;
-  --color-night-700: #22304f;
-  --color-night-600: #33456b;
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --color-night-950: #111111; /* page */
+  --color-night-900: #171717; /* panels */
+  --color-night-850: #1c1c1c; /* hover / raised */
+  --color-night-800: #232323; /* tags, chips */
+  --color-night-700: #2d2d2d; /* hairlines, selected */
+  --color-night-600: #3a3a3a;
+  --color-cream: #ecebe4;
+  --color-cream-dim: #c9c7bd;
+  --color-copper: #d98b45;
+  --color-copper-dim: #8a5a2e;
+  /* The app used indigo as its accent; map it onto copper so every accent follows the style. */
+  --color-indigo-100: #f6e3cf;
+  --color-indigo-200: #efc9a2;
+  --color-indigo-300: #e6aa72;
+  --color-indigo-400: #e09a58;
+  --color-indigo-500: #d98b45;
+  --font-sans: "Inter Tight", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 
-html, body { background: var(--color-night-950); }
-::selection { background: #fbbf2455; }
+html, body { background: var(--color-night-950); color: #d6d4cc; -webkit-font-smoothing: antialiased; }
+::selection { background: #d98b4555; }
+h1, h2, h3 { letter-spacing: -0.02em; }
 .scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
-.scroll-thin::-webkit-scrollbar-thumb { background: #33456b; border-radius: 8px; }
+.scroll-thin::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 8px; }
+
+/* Thin copper grid used as background art (like the dark Retool sections). */
+.copper-grid {
+  background-image:
+    linear-gradient(to right, rgb(217 139 69 / 0.09) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(217 139 69 / 0.09) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
 @keyframes pulse-dot { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
 .pulse-dot { animation: pulse-dot 1.6s ease-in-out infinite; }
 @keyframes dash-flow { to { stroke-dashoffset: -24 } }
