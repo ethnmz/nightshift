@@ -440,6 +440,51 @@ function PlanStep({ app, s }: { app: AppState; s: SetupData }) {
 }
 
 // ---------- 5. Share ----------
+/** One setup megaprompt per teammate: they paste it into their own Claude Code or Codex. */
+function SetupPrompts({ shared }: { shared: boolean }) {
+  const [data, setData] = useState<{ repo: string; prompts: { id: string; name: string; os: OS; agent: Agent; markdown: string }[] } | null>(null);
+  const [err, setErr] = useState("");
+  const [open, setOpen] = useState<string | null>(null);
+  useEffect(() => {
+    api.onboarding().then(setData).catch((e) => setErr(String(e.message)));
+  }, [shared]);
+  const osName = { mac: "Mac", windows: "Windows", linux: "Linux" } as const;
+  return (
+    <div className="space-y-3 border-t border-night-700 pt-5">
+      <div>
+        <div className="text-lg font-light text-cream">Setup prompts for each teammate</div>
+        <p className="mt-1 text-sm text-neutral-400">
+          Send each person their file. They open Claude Code or Codex on their own computer, paste it in, and their AI does the whole setup: checks tools, installs Nightshift, joins this project, runs the final check, and leaves the computer ready to start when you do. They only type their own logins.
+        </p>
+      </div>
+      {!shared && <Note kind="warn">Share the plan first, so teammates can clone the project and the team board exists.</Note>}
+      {err && <Note kind="error">{err}</Note>}
+      <div className="divide-y divide-night-700 rounded-md border border-night-700">
+        {data?.prompts.map((p) => (
+          <div key={p.id}>
+            <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full border border-night-600 text-[11px] font-medium text-cream">{initials(p.name)}</span>
+              <span className="flex-1 text-sm text-neutral-200">
+                {p.name} <span className="text-neutral-500">· {osName[p.os]} · {agentLabel(p.agent)}</span>
+              </span>
+              <button onClick={() => setOpen(open === p.id ? null : p.id)} className="text-xs text-neutral-400 hover:text-white">
+                {open === p.id ? "Hide" : "Preview"}
+              </button>
+              <Copy text={p.markdown} label="Copy prompt" />
+              <a href={`/api/onboarding/${encodeURIComponent(p.id)}.md`} className="rounded-full border border-night-600 px-2.5 py-0.5 text-xs text-neutral-300 hover:border-cream/60">
+                Download .md
+              </a>
+            </div>
+            {open === p.id && <pre className="scroll-thin max-h-96 overflow-auto whitespace-pre-wrap border-t border-night-700 bg-[#0c0c0c] p-4 font-mono text-[11.5px] leading-relaxed text-neutral-300">{p.markdown}</pre>}
+          </div>
+        ))}
+        {data && !data.prompts.length && <div className="px-4 py-3 text-sm text-neutral-500">Add teammates in the Team step first.</div>}
+      </div>
+      {shared && data && <p className="text-xs text-neutral-500">The files are also saved in the project as .nightshift/onboarding/&lt;name&gt;.md on GitHub. Teammates also need access to the Nightshift repo itself if it is private.</p>}
+    </div>
+  );
+}
+
 function ShareStep({ app, s, reload }: { app: AppState; s: SetupData; reload: () => Promise<AppState | null> }) {
   const [pre, setPre] = useState<{ files: string[]; repo: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -511,13 +556,16 @@ function ShareStep({ app, s, reload }: { app: AppState; s: SetupData; reload: ()
           ))}
         {!s.team.some((m) => m.github) && <p className="text-sm text-neutral-500">Add GitHub usernames in the Team step to invite people from here.</p>}
       </div>
-      <div className="space-y-2 border-t border-night-700 pt-5">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-white">Send this to your teammates</span>
-          <Copy text={message} label="Copy message" />
+      <SetupPrompts shared={!!app.board?.issue} />
+      <details className="border-t border-night-700 pt-5">
+        <summary className="cursor-pointer text-sm text-neutral-400 hover:text-white">Or send the manual steps instead</summary>
+        <div className="mt-3 space-y-2">
+          <div className="flex justify-end">
+            <Copy text={message} label="Copy message" />
+          </div>
+          <pre className="whitespace-pre-wrap rounded-md bg-night-950 p-4 text-xs leading-relaxed text-neutral-300">{message}</pre>
         </div>
-        <pre className="whitespace-pre-wrap rounded-md bg-night-950 p-4 text-xs leading-relaxed text-neutral-300">{message}</pre>
-      </div>
+      </details>
     </Card>
   );
 }

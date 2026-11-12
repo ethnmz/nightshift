@@ -14,6 +14,8 @@ import { buildReport, openMorningPr } from "./report.js";
 import { plan } from "./planner.js";
 import { Setup, loadSetup, saveSetup, adoptPlannerChecks } from "./setup.js";
 import { autofill } from "./autofill.js";
+import { teammatePrompt, writeTeammatePrompts } from "./onboarding.js";
+import { loadTasks } from "./config.js";
 import { createPractice } from "./practice.js";
 import { run } from "./exec.js";
 import { IS_WIN, OS_NAME, USER_DIR, bashPath, resolveCli } from "./platform.js";
@@ -421,6 +423,12 @@ export function serve(o: ServeOpts) {
           steps.push(`Created the team board: issue #${num}`);
           observer = undefined;
         }
+        // One setup megaprompt per teammate, committed with the plan.
+        const setupNow = loadSetup(root!);
+        if (setupNow.team.length) {
+          const written = writeTeammatePrompts(root!, { setup: setupNow, cfg: loadNight(root!), tasks: safeTasks(root!), repo: repo!, leadName: setupNow.team[0].name });
+          steps.push(`Wrote ${written.length} teammate setup prompt${written.length === 1 ? "" : "s"}`);
+        }
         await run("git", ["add", "-A"], { cwd: root!, timeoutMs: 30_000 });
         const c = await run("git", ["commit", "-q", "-m", "Nightshift: plan for tonight"], { cwd: root!, timeoutMs: 30_000 });
         if (c.code === 0) steps.push("Committed the plan");
@@ -433,6 +441,35 @@ export function serve(o: ServeOpts) {
         need(push.code === 0, `Push failed: ${push.stderr.trim().slice(0, 300)}`);
         steps.push(`Pushed to ${repo} (${base})`);
         return json(res, 200, { ok: true, steps, repo, link: `https://github.com/${repo}` });
+      }
+      if (route === "GET /api/onboarding") {
+        // Setup megaprompts, generated fresh from the current plan (also saved on Share).
+        need(root && hasNight(), "Save the team first.");
+        const setupNow = loadSetup(root!);
+        const repo = (await ghRepo()) ?? "OWNER/REPO";
+        const cfg = loadNight(root!);
+        const tasks = safeTasks(root!);
+        return json(res, 200, {
+          repo,
+          prompts: setupNow.team.map((member) => ({
+            id: member.id,
+            name: member.name,
+            os: member.os,
+            agent: member.agent,
+            markdown: teammatePrompt({ setup: setupNow, cfg, tasks, member, repo, leadName: setupNow.team[0]?.name ?? "the lead" }),
+          })),
+        });
+      }
+      if (req.method === "GET" && url.pathname.startsWith("/api/onboarding/") && url.pathname.endsWith(".md")) {
+        need(root && hasNight(), "Save the team first.");
+        const id = decodeURIComponent(url.pathname.slice("/api/onboarding/".length, -3));
+        const setupNow = loadSetup(root!);
+        const member = setupNow.team.find((x) => x.id === id);
+        need(member, "No such teammate.");
+        const repo = (await ghRepo()) ?? "OWNER/REPO";
+        const md = teammatePrompt({ setup: setupNow, cfg: loadNight(root!), tasks: safeTasks(root!), member: member!, repo, leadName: setupNow.team[0]?.name ?? "the lead" });
+        res.writeHead(200, { "content-type": "text/markdown; charset=utf-8", "content-disposition": `attachment; filename="nightshift-setup-${id}.md"` });
+        return res.end(md);
       }
       if (route === "POST /api/invite") {
         need(root, "No project open.");
@@ -575,4 +612,12 @@ export function serve(o: ServeOpts) {
   server.on("error", (e) => console.error(`app not started on :${port}: ${String(e)}`));
   server.listen(port, "127.0.0.1");
   return { server, port };
+}
+
+function safeTasks(root: string) {
+  try {
+    return loadTasks(root);
+  } catch {
+    return [];
+  }
 }

@@ -159,6 +159,7 @@ export const api = {
   sharePreview: () => req<{ files: string[]; repo: string | null }>("/api/share"),
   share: () => post<{ steps: string[]; repo: string; link: string }>("/api/share"),
   invite: (github: string) => post<{ note: string }>("/api/invite", { github }),
+  onboarding: () => req<{ repo: string; prompts: { id: string; name: string; os: OS; agent: Agent; markdown: string }[] }>("/api/onboarding"),
   preflight: (live: boolean) => req<{ checks: Check[]; ok: boolean; posted: boolean }>(`/api/preflight?live=${live ? 1 : 0}`, { method: "POST" }),
   autostart: (on: boolean) => post("/api/autostart", { on }),
   start: (everyone: boolean) => post("/api/start", { everyone }),

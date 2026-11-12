@@ -30,7 +30,7 @@ Your browser opens Nightshift.
 2. **Team:** name, GitHub username, Mac/Windows/Linux, Claude Code or Codex, and role. Roles become each person's area of work.
 3. **Rules:** plain-word choices. Review every change? Can idle computers help others? Agents per computer, usage cap, who owns shared contracts.
 4. **Plan:** one click runs the AI planner (on the lead's subscription). It writes shared contracts and a task list per teammate. Read it and edit any task.
-5. **Share:** pushes the plan, creates the team's message board (a GitHub issue), invites teammates, and gives you the message to send them.
+5. **Share:** pushes the plan, creates the team's message board (a GitHub issue), invites teammates, and makes a **setup prompt for each teammate**. A teammate pastes their file into Claude Code or Codex on their own computer, and their AI does the whole setup: checks and installs tools (asking first), installs Nightshift, runs `nightshift join`, runs the final check, and leaves the computer on `nightshift start --wait-for-go`, so it starts when you start the night. Teammates only type their own logins.
 6. **Your computer** (each teammate): pick who you are, see what's missing with copy-paste install commands for your OS, then run the final check (power, sleep, GitHub access, and a live call to your agent through your plan).
 7. **Start:** see who's ready. The lead can **Start the night for everyone**, and teammates can turn on *start automatically*.
 
@@ -57,7 +57,7 @@ Your browser opens Nightshift.
 npm test
 ```
 
-That runs 45 tests: permission policy, file ownership, scheduler, claim races, commands that would prompt, 4-computer nights with stand-in agents, Codex, usage-limit hand-offs, the setup wizard backend, and the app API. An opt-in live test runs one real Claude task (`NIGHTSHIFT_LIVE=1 npx vitest run test/live.test.ts`) and checks it finishes with zero denied actions.
+That runs 48 tests: permission policy, file ownership, scheduler, claim races, commands that would prompt, 4-computer nights with stand-in agents, Codex, usage-limit hand-offs, the setup wizard backend, and the app API. An opt-in live test runs one real Claude task (`NIGHTSHIFT_LIVE=1 npx vitest run test/live.test.ts`) and checks it finishes with zero denied actions.
 
 ## Not verified yet
 

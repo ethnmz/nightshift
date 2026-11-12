@@ -12,6 +12,10 @@ import { plan } from "./planner.js";
 import { serve } from "./server.js";
 import { readiness } from "./scheduler.js";
 import { keepAwake, openBrowser } from "./platform.js";
+import { run } from "./exec.js";
+import { makeBoard } from "./daemon.js";
+import { humanLine } from "./board/envelope.js";
+import { resolve as resolvePath } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES = join(HERE, "..", "templates");
@@ -24,7 +28,7 @@ function args(argv: string[]) {
     if (a.startsWith("--")) {
       const [k, v] = a.slice(2).split("=");
       if (v !== undefined) flags[k] = v;
-      else if (argv[i + 1] && !argv[i + 1].startsWith("--") && ["node", "port", "project", "night", "agent"].includes(k)) flags[k] = argv[++i];
+      else if (argv[i + 1] && !argv[i + 1].startsWith("--") && ["node", "port", "project", "night", "agent", "dir"].includes(k)) flags[k] = argv[++i];
       else flags[k] = true;
     } else pos.push(a);
   }
@@ -76,10 +80,14 @@ Evening (everyone awake)
   plan [--agent codex]         planner agent: idea.md → contracts, stubs, tasks.yaml
   validate                     check night.yaml + tasks.yaml, print the DAG
   serve --node ID              open the dashboard (plan editor, preflight, start) on localhost
+  join <repo> --node ID [--dir PARENT]
+                               teammates: clone (or update) the team's project and say which teammate
+                               this computer is. Prints the project folder.
   preflight --node ID [--skip-live]   everything that could block at 3 a.m. fails now
 
 Night (everyone asleep)
-  start --node ID [--no-dashboard] [--no-keep-awake] [--skip-preflight]
+  start --node ID [--wait-for-go] [--no-dashboard] [--no-keep-awake] [--skip-preflight]
+                               --wait-for-go: check now, then wait until the lead starts the night
                                run this computer's node until the night is finished
                                (keeps the computer awake; restarts the node if it crashes)
   launchd --node ID [--install]  macOS only: also restart after a reboot/logout
@@ -97,6 +105,34 @@ Any time
     const url = `http://localhost:${port}`;
     console.log(`Nightshift is open at ${url}  (leave this window open; Ctrl+C to quit)`);
     if (!flags["no-open"]) setTimeout(() => openBrowser(url), 400);
+    return;
+  }
+
+  if (cmd === "join") {
+    const repoArg = rest.find((a) => !a.startsWith("--") && a !== flags.node && a !== flags.dir);
+    const m = repoArg && (/github\.com[/:]([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(repoArg) ?? /^([\w.-]+\/[\w.-]+)$/.exec(repoArg));
+    if (!m) throw new Error("usage: nightshift join https://github.com/OWNER/REPO --node YOUR_ID");
+    if (typeof flags.node !== "string") throw new Error("pass --node with your teammate id (it is in your setup prompt)");
+    const slug = m[1];
+    const parent = resolvePath(typeof flags.dir === "string" ? flags.dir : join(homedir(), "hackathons"));
+    mkdirSync(parent, { recursive: true });
+    const dir = join(parent, slug.split("/")[1]);
+    if (existsSync(join(dir, ".git"))) {
+      const pull = await run("git", ["pull", "-q", "--ff-only"], { cwd: dir, timeoutMs: 120_000 });
+      if (pull.code !== 0) throw new Error(`could not update ${dir}: ${pull.stderr.trim()}`);
+      console.log(`Updated ${dir}`);
+    } else {
+      const c = await run("gh", ["repo", "clone", slug, dir], { timeoutMs: 300_000 });
+      if (c.code !== 0) throw new Error(`could not clone ${slug}: ${(c.stderr || c.stdout).trim()}. Did you accept the GitHub invitation?`);
+      console.log(`Cloned ${slug} into ${dir}`);
+    }
+    const cfg = loadNight(dir);
+    const me = cfg.nodes.find((n) => n.id === flags.node);
+    if (!me) throw new Error(`"${flags.node}" is not on this team. Teammate ids: ${cfg.nodes.map((n) => n.id).join(", ")}`);
+    mkdirSync(paths(dir).local, { recursive: true });
+    writeFileSync(join(paths(dir).local, "node"), me.id);
+    console.log(`This computer is ${me.name} (${me.id}), roles: ${me.lanes.join(", ")}.`);
+    console.log(`PROJECT_DIR=${dir}`);
     return;
   }
 
@@ -146,6 +182,7 @@ Any time
     for (const c of res) console.log(`${icon[c.status]} ${c.name.padEnd(30)} ${c.detail}`);
     const ok = preflightOk(res);
     console.log(ok ? "\nReady for the night." : "\nFix the ✖ items before you sleep.");
+    if (ok) await postToBoard(r, id, "ready", "is ready for tonight (checks passed).").then((posted) => posted && console.log("Told the team board this computer is ready."));
     process.exitCode = ok ? 0 : 1;
     return;
   }
@@ -172,6 +209,25 @@ Any time
     const cfg = loadNight(r);
     const miss = missingAuthorizations(cfg);
     if (miss.length) throw new Error(`not authorized in night.yaml: ${miss.join(", ")}`);
+    if (flags["wait-for-go"]) {
+      // Ready now; begin when the lead starts the night (a "go" post, or any teammate's node coming up).
+      await postToBoard(r, id, "ready", "is ready and waiting for the lead to start the night.");
+      const night = nightName(cfg);
+      const board = makeBoard(cfg, r, join(p.local, id, "wait-cursor"));
+      console.log("Ready. Waiting for the team lead to start the night. Leave this window open, plugged in, lid open.");
+      if (!flags["no-keep-awake"]) keepAwake(process.pid);
+      for (;;) {
+        const msgs = await board.fetchAll().catch(() => []);
+        const go = msgs.find((m) => m.env && m.env.night === night && m.env.from !== id && (m.env.type === "go" || m.env.type === "node_up"));
+        if (go) {
+          console.log(`The night has started (${go.env!.type === "go" ? "the lead said go" : `${go.env!.from}'s computer started`}). Starting this computer.`);
+          break;
+        }
+        if (existsSync(join(p.local, id, "STOP"))) return;
+        await new Promise((res) => setTimeout(res, Number(process.env.NIGHTSHIFT_GO_POLL_MS ?? 20_000)));
+      }
+    }
+    if (flags.go) await postToBoard(r, id, "go", "started the night for everyone.");
     const dir = join(p.local, id);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "daemon.pid"), String(process.pid));
@@ -294,3 +350,18 @@ main().catch((e) => {
   console.error(`nightshift: ${e instanceof Error ? e.message : e}`);
   process.exit(1);
 });
+
+/** Post one structured note to the team board from the command line. Never throws. */
+async function postToBoard(root: string, id: string, type: "ready" | "go", text: string): Promise<boolean> {
+  try {
+    const cfg = loadNight(root);
+    if (cfg.board.kind === "github" && !cfg.board.issue) return false;
+    const me = cfg.nodes.find((n) => n.id === id);
+    if (!me) return false;
+    const board = makeBoard(cfg, root, join(paths(root).local, id, "cli-board-cursor"));
+    await board.post(humanLine(me.name, text), { v: 1, from: id, to: "*", type, body: {}, at: Date.now(), night: nightName(cfg) });
+    return true;
+  } catch {
+    return false;
+  }
+}
