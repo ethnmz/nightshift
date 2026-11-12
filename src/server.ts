@@ -13,6 +13,7 @@ import { preflight } from "./preflight.js";
 import { buildReport, openMorningPr } from "./report.js";
 import { plan } from "./planner.js";
 import { Setup, loadSetup, saveSetup, adoptPlannerChecks } from "./setup.js";
+import { autofill } from "./autofill.js";
 import { createPractice } from "./practice.js";
 import { run } from "./exec.js";
 import { IS_WIN, OS_NAME, USER_DIR, bashPath, resolveCli } from "./platform.js";
@@ -325,6 +326,21 @@ export function serve(o: ServeOpts) {
         saveSetup(root!, s);
         observer = undefined;
         return json(res, 200, { ok: true, setup: loadSetup(root!) });
+      }
+      if (route === "GET /api/setup/template") {
+        res.writeHead(200, { "content-type": "text/markdown; charset=utf-8", "content-disposition": 'attachment; filename="hackathon-brief.md"' });
+        return res.end(readFileSync(join(HERE, "..", "templates", "brief.md")));
+      }
+      if (route === "POST /api/setup/autofill") {
+        need(root, "Open or create a project first.");
+        const b = await readBody(req);
+        const md = String(b.markdown ?? "");
+        need(md.trim().length > 20, "That file looks empty.");
+        need(md.length < 400_000, "That file is too large for a brief (keep it under 400 KB).");
+        mkdirSync(paths(root!).dir, { recursive: true });
+        writeFileSync(join(paths(root!).dir, "brief.md"), md);
+        const current = b.current ? Setup.parse(b.current) : loadSetup(root!);
+        return json(res, 200, await autofill(md, current, { ai: b.ai !== false }));
       }
       if (route === "POST /api/me") {
         need(root, "No project open.");

@@ -151,6 +151,7 @@ export const api = {
   practice: () => post("/api/practice"),
   saveSetup: (s: SetupData) => req<{ setup: SetupData }>("/api/setup", { method: "PUT", body: JSON.stringify(s) }),
   setMe: (node: string) => post("/api/me", { node }),
+  autofill: (markdown: string, current: SetupData, ai: boolean) => post<{ setup: SetupData; filled: string[]; usedAI: boolean; aiError?: string }>("/api/setup/autofill", { markdown, current, ai }),
   plan: (agent: Agent) => post("/api/plan", { agent }),
   planStatus: () => req<{ running: boolean; log: string[]; ok?: boolean; error?: string }>("/api/plan"),
   tasks: () => req<{ yaml: string; tasks: Task[] }>("/api/tasks"),

@@ -100,8 +100,10 @@ function EventStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) 
   const ev = (k: keyof SetupData["event"], v: string) => setS({ ...s, event: { ...s.event, [k]: v } });
   const id = (k: keyof SetupData["idea"], v: string) => setS({ ...s, idea: { ...s.idea, [k]: v } });
   return (
-    <Card className="space-y-5">
-      <Head title="Tell us about the hackathon" sub="The AI planner and every agent read this. Plain words are fine." />
+    <div className="space-y-4">
+      <BriefUpload s={s} setS={(x) => (setS(x), setMore(!!(x.idea.problem || x.idea.nice || x.event.links)))} />
+      <Card className="space-y-5">
+      <Head title="Tell us about the hackathon" sub="The AI planner and every agent read this. Plain words are fine. Anything you uploaded shows up here to check and edit." />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Event">
           <Input placeholder="e.g. HackUTD 2026" value={s.event.name} onChange={(e) => ev("name", e.target.value)} />
@@ -147,6 +149,72 @@ function EventStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) 
           </Field>
         </div>
       )}
+      </Card>
+    </div>
+  );
+}
+
+/** Drop a markdown brief; Nightshift fills in the whole setup (event, idea, team, rules). */
+function BriefUpload({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [ai, setAi] = useState(true);
+  const [drag, setDrag] = useState(false);
+  const [res, setRes] = useState<{ ok: boolean; t: string } | null>(null);
+  const run = async (file: File) => {
+    if (!/\.(md|markdown|txt)$/i.test(file.name)) {
+      setRes({ ok: false, t: "Use a .md (markdown) or .txt file." });
+      return;
+    }
+    setBusy(true);
+    setRes(null);
+    try {
+      const text = await file.text();
+      const r = await api.autofill(text, s, ai);
+      setS(r.setup);
+      const parts = [`Filled from ${file.name}: ${r.filled.join(", ") || "nothing recognizable"}.`];
+      if (ai && !r.usedAI) parts.push(`The AI pass did not run (${r.aiError ?? "unavailable"}), so only clearly labeled sections were used.`);
+      else if (r.usedAI) parts.push("AI filled in what the headings didn't say.");
+      parts.push("Check each step, then save.");
+      setRes({ ok: true, t: parts.join(" ") });
+    } catch (e) {
+      setRes({ ok: false, t: String((e as Error).message) });
+    }
+    setBusy(false);
+  };
+  return (
+    <Card className="space-y-4">
+      <Title tag="Fastest way" title="Start from your brief" sub="Write your hackathon notes in one markdown file (event, challenge, idea, demo, team, rules), then drop it here. Nightshift fills in every step it can." />
+      <label
+        onDragOver={(e) => (e.preventDefault(), setDrag(true))}
+        onDragLeave={() => setDrag(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDrag(false);
+          const f = e.dataTransfer.files?.[0];
+          if (f) void run(f);
+        }}
+        className={`copper-grid flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed px-6 py-10 text-center transition ${drag ? "border-copper bg-copper/10" : "border-night-600 hover:border-cream/50"}`}
+      >
+        <input type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" className="hidden" onChange={(e) => e.target.files?.[0] && void run(e.target.files[0])} />
+        {busy ? (
+          <>
+            <span className="h-5 w-5 animate-spin rounded-full border-2 border-cream border-t-transparent" />
+            <span className="text-sm text-neutral-300">{ai ? "Reading your brief (the AI pass can take up to a minute)…" : "Reading your brief…"}</span>
+          </>
+        ) : (
+          <>
+            <span className="text-base font-light text-cream">Drop your brief.md here</span>
+            <span className="text-xs text-neutral-500">or click to choose a file</span>
+          </>
+        )}
+      </label>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        <Toggle on={ai} onChange={setAi} label="Let AI fill in what the headings don't say" hint="Uses your Claude Code subscription for one short read." />
+        <a href="/api/setup/template" className="ml-auto text-sm text-neutral-300 underline decoration-night-600 underline-offset-4 hover:text-white">
+          Download the brief template
+        </a>
+      </div>
+      {res && <Note kind={res.ok ? "ok" : "error"}>{res.t}</Note>}
     </Card>
   );
 }

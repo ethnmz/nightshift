@@ -26,7 +26,7 @@ Your browser opens Nightshift.
 
 ## The setup (in the browser)
 
-1. **Hackathon:** the event, challenge/track, deadline, idea, what the demo must show, must-haves, stack, and rules for the agents.
+1. **Hackathon:** fastest path: drop one markdown brief (your notes, or the downloadable template) and Nightshift fills in the whole setup: event, challenge, deadline, idea, demo, must-haves, stack, rules, team, and overnight rules. Labeled sections are read exactly, and an optional AI pass (one short read on your Claude subscription) fills in the rest from freeform notes. The whole brief is also handed to the planner. You can always type or fix fields by hand.
 2. **Team:** name, GitHub username, Mac/Windows/Linux, Claude Code or Codex, and role. Roles become each person's area of work.
 3. **Rules:** plain-word choices. Review every change? Can idle computers help others? Agents per computer, usage cap, who owns shared contracts.
 4. **Plan:** one click runs the AI planner (on the lead's subscription). It writes shared contracts and a task list per teammate. Read it and edit any task.
@@ -57,7 +57,7 @@ Your browser opens Nightshift.
 npm test
 ```
 
-That runs 40 tests: permission policy, file ownership, scheduler, claim races, commands that would prompt, 4-computer nights with stand-in agents, Codex, usage-limit hand-offs, the setup wizard backend, and the app API. An opt-in live test runs one real Claude task (`NIGHTSHIFT_LIVE=1 npx vitest run test/live.test.ts`) and checks it finishes with zero denied actions.
+That runs 45 tests: permission policy, file ownership, scheduler, claim races, commands that would prompt, 4-computer nights with stand-in agents, Codex, usage-limit hand-offs, the setup wizard backend, and the app API. An opt-in live test runs one real Claude task (`NIGHTSHIFT_LIVE=1 npx vitest run test/live.test.ts`) and checks it finishes with zero denied actions.
 
 ## Not verified yet
 

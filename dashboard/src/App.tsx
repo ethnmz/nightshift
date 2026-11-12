@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, AppState } from "./api";
-import { Moon } from "./ui";
+
 import { Welcome } from "./Welcome";
 import { SetupWizard } from "./Setup";
 import { Tonight } from "./Tonight";
@@ -49,16 +49,11 @@ export default function App() {
     );
 
   const current = tab ?? "setup";
-  const name = app.setup?.event.name || app.project.name;
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-20 border-b border-night-700 bg-night-950/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-3 px-5 py-3 sm:px-8">
-          <button onClick={async () => (await api.close(), await reload(), setTab(null))} className="flex items-center gap-2" title="Switch project">
-            <Moon className="h-5 w-5 text-cream" />
-            <span className="max-w-[40vw] truncate font-medium text-cream">{name}</span>
-          </button>
-          <nav className="ml-auto flex gap-1 text-[13px]">
+          <nav className="flex gap-1 text-[13px]">
             {(["setup", "tonight", "morning"] as Tab[]).map((t) => (
               <button key={t} onClick={() => setTab(t)} className={`rounded-full px-3.5 py-1.5 capitalize transition ${current === t ? "bg-cream text-night-950" : "text-neutral-400 hover:text-white"}`}>
                 {t}
@@ -66,6 +61,9 @@ export default function App() {
               </button>
             ))}
           </nav>
+          <button onClick={async () => (await api.close(), await reload(), setTab(null))} className="ml-auto text-[13px] text-neutral-500 hover:text-white">
+            Switch project
+          </button>
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-5 pb-20 pt-8 sm:px-8">

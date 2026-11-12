@@ -152,8 +152,20 @@ export function saveSetup(root: string, s: Setup): { night: string; idea: string
     seen.add(id);
     m.id = id;
   }
+  // The contracts owner may arrive as a name (from a brief); store the member id.
+  const o = s.rules.contractsOwner.trim().toLowerCase();
+  if (o && !s.team.some((m) => m.id === o)) {
+    const hit = s.team.find((m) => m.name.toLowerCase() === o) ?? s.team.find((m) => m.name.toLowerCase().split(" ")[0] === o.split(" ")[0]);
+    s.rules.contractsOwner = hit?.id ?? "";
+  }
   writeFileSync(setupFile(root), JSON.stringify(s, null, 2) + "\n");
-  const idea = ideaMarkdown(s);
+  let idea = ideaMarkdown(s);
+  // Keep the team's whole brief for the planner, so nothing the form could not hold is lost.
+  const brief = join(p.dir, "brief.md");
+  if (existsSync(brief)) {
+    const text = readFileSync(brief, "utf8").replace(/<!--[\s\S]*?-->/g, "").trim();
+    if (text) idea += `\n## The team's original brief\n\n${text.slice(0, 40_000)}\n`;
+  }
   writeFileSync(p.idea, idea);
   const existing = existsSync(p.night) ? (YAML.parse(readFileSync(p.night, "utf8")) as Partial<NightConfig>) : undefined;
   const night = YAML.stringify(nightYaml(s, root, existing));
