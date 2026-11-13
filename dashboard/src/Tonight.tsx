@@ -15,7 +15,7 @@ function place(n: number, i: number) {
 type Kind = "merge" | "handoff" | "ask" | "answer" | "release" | "note";
 const KIND: Record<Kind, { color: string; label: string }> = {
   merge: { color: "#ecebe4", label: "merged" },
-  handoff: { color: "#d98b45", label: "unblocked" },
+  handoff: { color: "#4a9d68", label: "unblocked" },
   ask: { color: "#8fb8de", label: "asks" },
   answer: { color: "#b9d4ec", label: "answers" },
   release: { color: "#e8b04f", label: "hands off" },
@@ -241,8 +241,8 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
         <svg viewBox={`0 0 ${W} ${H}`} className="relative block h-auto w-full">
           <defs>
             <radialGradient id="hubglow">
-              <stop offset="0%" stopColor="#d98b45" stopOpacity="0.28" />
-              <stop offset="100%" stopColor="#d98b45" stopOpacity="0" />
+              <stop offset="0%" stopColor="#4a9d68" stopOpacity="0.28" />
+              <stop offset="100%" stopColor="#4a9d68" stopOpacity="0" />
             </radialGradient>
           </defs>
           {/* spokes */}
@@ -252,7 +252,7 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
           })}
           {/* hub: the shared night branch */}
           <circle cx={HUB.x} cy={HUB.y} r="70" fill="url(#hubglow)" />
-          <circle cx={HUB.x} cy={HUB.y} r="34" fill="#1c1c1c" stroke="#d98b45" strokeOpacity="0.8" />
+          <circle cx={HUB.x} cy={HUB.y} r="34" fill="#1c1c1c" stroke="#4a9d68" strokeOpacity="0.8" />
           <path transform={`translate(${HUB.x - 12} ${HUB.y - 16}) scale(0.8)`} d="M20 4a12 12 0 1 0 8 20A10 10 0 0 1 20 4z" fill="#ecebe4" />
           <text x={HUB.x} y={HUB.y + 54} textAnchor="middle" fill="#8a8a85" fontSize="11" fontFamily="JetBrains Mono, monospace">
             night branch · {done} merged
@@ -290,7 +290,7 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
           {snap.nodes.map((n) => {
             const p = positions.get(n.id)!;
             const st = statusOf(n);
-            const ring = { working: "#d98b45", paused: "#e8b04f", finished: "#ecebe4", idle: "#5a5a55", offline: "#333333" }[st.key];
+            const ring = { working: "#4a9d68", paused: "#e8b04f", finished: "#ecebe4", idle: "#5a5a55", offline: "#333333" }[st.key];
             return (
               <g key={n.id} opacity={st.key === "offline" ? 0.55 : 1}>
                 {st.key === "working" && <circle cx={p.x} cy={p.y} r="40" fill="none" stroke={ring} strokeWidth="2" strokeDasharray="10 8" className="spin-slow" style={{ transformOrigin: `${p.x}px ${p.y}px` }} />}
@@ -306,7 +306,7 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
                 </text>
                 {st.working.length > 1 && (
                   <g>
-                    <circle cx={p.x + 26} cy={p.y - 24} r="10" fill="#d98b45" />
+                    <circle cx={p.x + 26} cy={p.y - 24} r="10" fill="#4a9d68" />
                     <text x={p.x + 26} y={p.y - 20} textAnchor="middle" fontSize="11" fontWeight="700" fill="#111111">
                       {st.working.length}
                     </text>

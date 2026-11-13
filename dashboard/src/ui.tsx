@@ -56,7 +56,7 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
   );
 }
 
-const inputCls = "w-full rounded-md border border-night-700 bg-[#0c0c0c] px-3.5 py-2.5 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 transition-[border-color,box-shadow] duration-200 hover:border-night-600 focus:border-copper/70 focus:shadow-[0_0_0_4px_rgba(217,139,69,0.12)]";
+const inputCls = "w-full rounded-md border border-night-700 bg-[#0c0c0c] px-3.5 py-2.5 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 transition-[border-color,box-shadow] duration-200 hover:border-night-600 focus:border-copper/70 focus:shadow-[0_0_0_4px_rgba(74,157,104,0.12)]";
 export function Input(p: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...p} className={`${inputCls} ${p.className ?? ""}`} />;
 }
@@ -169,7 +169,7 @@ export function Rays({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 400 220" className={className} aria-hidden preserveAspectRatio="none">
       {lines.map((i) => (
-        <line key={i} x1="0" y1="0" x2={400} y2={i * 11} stroke="#d98b45" strokeOpacity={0.55 - i * 0.02} strokeWidth="0.8" />
+        <line key={i} x1="0" y1="0" x2={400} y2={i * 11} stroke="#4a9d68" strokeOpacity={0.55 - i * 0.02} strokeWidth="0.8" />
       ))}
     </svg>
   );

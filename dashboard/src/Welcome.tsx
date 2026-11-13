@@ -176,9 +176,9 @@ function HeroArt() {
         {people.map((p) => (
           <line key={p.n} x1={p.x} y1={p.y} x2="200" y2="160" stroke="#ecebe4" strokeOpacity="0.12" />
         ))}
-        <path d="M70,160 Q120,70 200,52" fill="none" stroke="#d98b45" strokeWidth="1.5" strokeDasharray="5 5" className="dash-flow" />
+        <path d="M70,160 Q120,70 200,52" fill="none" stroke="#4a9d68" strokeWidth="1.5" strokeDasharray="5 5" className="dash-flow" />
         <path d="M330,160 Q290,250 200,268" fill="none" stroke="#9ec5e8" strokeWidth="1.5" strokeDasharray="5 5" className="dash-flow" />
-        <circle cx="200" cy="160" r="26" fill="#1c1c1c" stroke="#d98b45" />
+        <circle cx="200" cy="160" r="26" fill="#1c1c1c" stroke="#4a9d68" />
         <path transform="translate(190 148) scale(0.62)" d="M20 4a12 12 0 1 0 8 20A10 10 0 0 1 20 4z" fill="#ecebe4" />
         {people.map((p) => (
           <g key={p.n}>
