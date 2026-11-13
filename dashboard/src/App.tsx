@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, AppState } from "./api";
 
 import { Welcome } from "./Welcome";
@@ -12,6 +12,13 @@ export default function App() {
   const [app, setApp] = useState<AppState | null>(null);
   const [err, setErr] = useState("");
   const [tab, setTab] = useState<Tab | null>(null);
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [, force] = useState(0);
+  useEffect(() => {
+    // Re-measure once the tabs are in the DOM so the indicator starts in the right place.
+    const t = setTimeout(() => force((n) => n + 1), 0);
+    return () => clearTimeout(t);
+  }, [tab, app?.project?.path]);
 
   const reload = useCallback(async () => {
     try {
@@ -49,13 +56,27 @@ export default function App() {
     );
 
   const current = tab ?? "setup";
+  const measured = tabRefs.current[current];
+  const pill = measured ? { left: measured.offsetLeft, width: measured.offsetWidth } : { left: 0, width: 0 };
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-20 border-b border-night-700 bg-night-950/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-3 px-5 py-3 sm:px-8">
-          <nav className="flex gap-1 text-[13px]">
+          <nav className="relative flex gap-1 text-[13px]">
+            <span
+              aria-hidden
+              className="absolute inset-y-0 rounded-full bg-cream transition-[left,width] duration-300 [transition-timing-function:cubic-bezier(.22,1,.36,1)]"
+              style={{ left: pill.left, width: pill.width }}
+            />
             {(["setup", "tonight", "morning"] as Tab[]).map((t) => (
-              <button key={t} onClick={() => setTab(t)} className={`rounded-full px-3.5 py-1.5 capitalize transition ${current === t ? "bg-cream text-night-950" : "text-neutral-400 hover:text-white"}`}>
+              <button
+                key={t}
+                ref={(el) => {
+                  tabRefs.current[t] = el;
+                }}
+                onClick={() => setTab(t)}
+                className={`relative z-10 rounded-full px-3.5 py-1.5 capitalize transition-colors duration-300 ${current === t ? "text-night-950" : "text-neutral-400 hover:text-white"}`}
+              >
                 {t}
                 {t === "tonight" && app.running && <span className="pulse-dot ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-indigo-300 align-middle" />}
               </button>

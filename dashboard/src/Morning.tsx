@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api, Snapshot } from "./api";
-import { Button, Card, Copy, Input, Note, Title } from "./ui";
+import { Button, Card, Copy, Input, Note, Skeleton, Title } from "./ui";
 
 export function Morning() {
   const [md, setMd] = useState<string | null>(null);
@@ -44,7 +44,14 @@ export function Morning() {
         </Note>
       )}
       {err && <Note kind="error">{err}</Note>}
-      {md === null && !err && <div className="text-neutral-500">Building the report…</div>}
+      {md === null && !err && (
+        <Card className="space-y-3">
+          <Skeleton className="h-7 w-2/3" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-5/6" />
+          <Skeleton className="h-4 w-4/6" />
+        </Card>
+      )}
       <SubmissionKit />
       <Retries />
       {md && <Card>{renderMarkdown(md)}</Card>}

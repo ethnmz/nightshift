@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, AppState, BoardRow, NodeSpec, Snapshot, TaskRow } from "./api";
-import { Button, Card, Input, Note, STATUS, agentLabel, ago, initials } from "./ui";
+import { Button, Card, Input, Note, STATUS, Skeleton, agentLabel, ago, initials } from "./ui";
 
 // ---------- layout ----------
 const W = 900;
@@ -163,7 +163,17 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
   }, [snap?.nodes]);
 
   if (err && !snap) return <Note>{err.includes("setup") ? "Finish the setup first (share the plan and set up this computer), then come back here." : err}</Note>;
-  if (!snap) return <div className="py-20 text-center text-neutral-500">Loading…</div>;
+  if (!snap)
+    return (
+      <div className="space-y-5">
+        <Skeleton className="h-14 w-64" />
+        <Skeleton className="h-[420px] w-full" />
+        <div className="grid gap-5 md:grid-cols-2">
+          <Skeleton className="h-56" />
+          <Skeleton className="h-56" />
+        </div>
+      </div>
+    );
 
   const done = snap.tasks.filter((t) => t.readiness === "done").length;
   const parked = snap.tasks.filter((t) => t.readiness === "parked").length;
@@ -321,9 +331,9 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
       <div className="grid gap-5 md:grid-cols-[1fr_1fr]">
         <Card>
           <div className="mb-4 text-lg font-light text-cream">What just happened</div>
-          <ul className="space-y-2.5">
+          <ul className="stagger space-y-1">
             {feed.map(({ m, s }) => (
-              <li key={m.id} className="flex gap-3 text-sm">
+              <li key={m.id} className="-mx-2 flex gap-3 rounded-md px-2 py-1 text-sm transition-colors duration-200 hover:bg-white/[0.03]">
                 <span className="w-10 shrink-0 text-xs tabular-nums text-neutral-500">{ago(Date.parse(m.createdAt))}</span>
                 <span className="text-neutral-300">{s}</span>
               </li>
@@ -347,7 +357,7 @@ function TaskList({ tasks, nodes, compact }: { tasks: TaskRow[]; nodes: NodeSpec
   return (
     <ul className="space-y-1.5">
       {shown.map((t) => (
-        <li key={t.id} className="flex items-center gap-2.5 text-sm">
+        <li key={t.id} className="-mx-2 flex items-center gap-2.5 rounded-md px-2 py-1 text-sm transition-colors duration-200 hover:bg-white/[0.03]">
           <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS[t.readiness].dot}`} />
           <span className="truncate text-neutral-300">{t.title}</span>
           <span className={`ml-auto shrink-0 text-xs ${STATUS[t.readiness].text}`}>

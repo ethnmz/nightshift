@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, AppState, Check, EMPTY_SETUP, Member, OS, SetupData, Task, Tools, Agent, Snapshot } from "./api";
 import { Button, Card, Code, Copy, Field, Input, Note, Segmented, Text, Toggle, Title, agentLabel, initials } from "./ui";
 
@@ -29,6 +29,7 @@ export function SetupWizard({ app, reload, goTonight }: { app: AppState; reload:
   const [s, setS] = useState<SetupData>(() => structuredClone(app.setup && app.project?.hasSetup ? app.setup : EMPTY_SETUP));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  const [dir, setDir] = useState(1);
   const joined = !!app.project?.hasSetup && !!app.board?.issue; // a teammate who joined a finished setup
   const idx = STEPS.findIndex((x) => x.id === step);
 
@@ -49,46 +50,69 @@ export function SetupWizard({ app, reload, goTonight }: { app: AppState; reload:
   };
   const next = async () => {
     if (["event", "team", "rules"].includes(step) && !(await save())) return;
-    setStep(STEPS[Math.min(idx + 1, STEPS.length - 1)].id);
-    window.scrollTo({ top: 0 });
+    go(STEPS[Math.min(idx + 1, STEPS.length - 1)].id);
   };
 
-  return (
-    <div className="grid gap-8 md:grid-cols-[200px_1fr]">
-      <ol className="scroll-thin flex overflow-x-auto border-night-700 md:flex-col md:border-t">
-        {STEPS.map((x, i) => (
-          <li key={x.id} className="md:border-b md:border-night-700">
-            <button onClick={() => setStep(x.id)} className={`flex w-full items-center gap-3 whitespace-nowrap px-3 py-3 text-left text-sm transition ${step === x.id ? "bg-night-850 text-cream" : "text-neutral-500 hover:text-neutral-200"}`}>
-              <span className={`font-mono text-[11px] ${i < idx ? "text-copper" : step === x.id ? "text-cream" : "text-neutral-600"}`}>{i < idx ? "✓ " : ""}{String(i + 1).padStart(2, "0")}</span>
-              {x.label}
-              {x.lead && joined && <span className="ml-auto text-[10px] text-neutral-600">lead</span>}
-            </button>
-          </li>
-        ))}
-      </ol>
+  const go = (to: StepId) => {
+    const j = STEPS.findIndex((x) => x.id === to);
+    setDir(j >= idx ? 1 : -1);
+    setStep(to);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const nextLabel = idx < STEPS.length - 1 ? STEPS[idx + 1].label : "";
 
-      <div className="space-y-4">
-        {joined && STEPS[idx].lead && <Note>Your team lead already did this step. You can look, but you only need "Your computer" and "Start".</Note>}
-        {step === "event" && <EventStep s={s} setS={setS} />}
-        {step === "team" && <TeamStep s={s} setS={setS} />}
-        {step === "rules" && <RulesStep s={s} setS={setS} />}
-        {step === "plan" && <PlanStep app={app} s={s} />}
-        {step === "share" && <ShareStep app={app} s={s} reload={reload} />}
-        {step === "computer" && <ComputerStep app={app} s={s} reload={reload} />}
-        {step === "start" && <StartStep app={app} reload={reload} goTonight={goTonight} />}
-        {err && <Note kind="error">{err}</Note>}
-        {step !== "start" && (
-          <div className="flex justify-end gap-2">
-            {idx > 0 && (
-              <Button kind="ghost" onClick={() => setStep(STEPS[idx - 1].id)}>
-                Back
-              </Button>
-            )}
-            <Button onClick={next} busy={saving}>
-              {["event", "team", "rules"].includes(step) ? "Save and continue" : "Continue"}
+  return (
+    <div className="pb-36">
+      {joined && STEPS[idx].lead && (
+        <div className="mb-6">
+          <Note>Your team lead already did this step. You can look around, but you only need "Your computer" and "Start".</Note>
+        </div>
+      )}
+      <StepCtx.Provider value={{ n: idx + 1, total: STEPS.length, label: STEPS[idx].label }}>
+        <div key={step} className={dir > 0 ? "page-in-right" : "page-in-left"}>
+          {step === "event" && <EventStep s={s} setS={setS} />}
+          {step === "team" && <TeamStep s={s} setS={setS} />}
+          {step === "rules" && <RulesStep s={s} setS={setS} />}
+          {step === "plan" && <PlanStep app={app} s={s} />}
+          {step === "share" && <ShareStep app={app} s={s} reload={reload} />}
+          {step === "computer" && <ComputerStep app={app} s={s} reload={reload} />}
+          {step === "start" && <StartStep app={app} reload={reload} goTonight={goTonight} />}
+        </div>
+      </StepCtx.Provider>
+      {err && (
+        <div className="mt-6">
+          <Note kind="error">{err}</Note>
+        </div>
+      )}
+
+      {/* Bottom bar: progress, Back, Next (Upwork-style) */}
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-night-700 bg-night-950/90 backdrop-blur-md">
+        <div className="flex h-1 w-full gap-[3px] bg-night-950" role="progressbar" aria-valuemin={1} aria-valuemax={STEPS.length} aria-valuenow={idx + 1} aria-label="Setup progress">
+          {STEPS.map((x, i) => (
+            <button key={x.id} onClick={() => go(x.id)} title={`${i + 1}. ${x.label}`} aria-label={`Go to step ${i + 1}: ${x.label}`} className="group relative h-full flex-1 bg-night-700">
+              <span className={`absolute inset-y-0 left-0 bg-copper transition-[width] duration-500 ease-out ${i < idx ? "w-full" : i === idx ? "w-1/2" : "w-0"}`} />
+              <span className="absolute inset-0 bg-cream/0 transition-colors group-hover:bg-cream/25" />
+            </button>
+          ))}
+        </div>
+        <div className="mx-auto flex max-w-6xl items-center gap-3 px-5 py-4 sm:px-8">
+          {idx > 0 ? (
+            <Button kind="soft" onClick={() => go(STEPS[idx - 1].id)}>
+              <span aria-hidden className="transition-transform duration-200 group-hover:-translate-x-0.5">←</span> Back
             </Button>
-          </div>
-        )}
+          ) : (
+            <span />
+          )}
+          <span className="ml-auto hidden font-mono text-xs text-neutral-500 sm:block">
+            {idx + 1} of {STEPS.length}
+          </span>
+          {step !== "start" && (
+            <Button onClick={next} busy={saving}>
+              {["event", "team", "rules"].includes(step) ? "Save · " : ""}Next: {nextLabel}
+              <span aria-hidden className="transition-transform duration-200 group-hover:translate-x-0.5">→</span>
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -100,10 +124,9 @@ function EventStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) 
   const ev = (k: keyof SetupData["event"], v: string) => setS({ ...s, event: { ...s.event, [k]: v } });
   const id = (k: keyof SetupData["idea"], v: string) => setS({ ...s, idea: { ...s.idea, [k]: v } });
   return (
-    <div className="space-y-4">
+    <StepPage title="Tell us about the hackathon" sub="The AI planner and every agent read this. Plain words are fine. Drop your notes as a markdown file and most of this fills itself in.">
       <BriefUpload s={s} setS={(x) => (setS(x), setMore(!!(x.idea.problem || x.idea.nice || x.event.links)))} />
       <Card className="space-y-5">
-      <Head title="Tell us about the hackathon" sub="The AI planner and every agent read this. Plain words are fine. Anything you uploaded shows up here to check and edit." />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Event">
           <Input placeholder="e.g. HackUTD 2026" value={s.event.name} onChange={(e) => ev("name", e.target.value)} />
@@ -150,7 +173,7 @@ function EventStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) 
         </div>
       )}
       </Card>
-    </div>
+    </StepPage>
   );
 }
 
@@ -228,18 +251,17 @@ function TeamStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) {
     if (!team.length) setS({ ...s, team: [{ id: "", name: "", github: "", os: "mac", agent: "claude", roles: "" }] });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <Card className="space-y-5">
-      <Head title="Who's on the team?" sub="Each person's computer runs their own coding agent overnight, on their own subscription." />
-      <div className="space-y-3">
+    <StepPage title="Who's on the team?" sub="Each person's computer runs their own coding agent overnight, on their own subscription.">
+      <div className="stagger space-y-3">
         {team.map((m, i) => (
-          <div key={i} className="rounded-md bg-[#0e0e0e] p-4 border border-night-700">
-            <div className="flex items-center gap-3">
+          <div key={i} className="rounded-md border border-night-700 bg-[#0e0e0e] p-4 transition-colors duration-200 hover:border-night-600">
+            <div className="flex flex-wrap items-center gap-3">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-night-600 text-xs font-medium text-cream">{initials(m.name || "?")}</span>
-              <Input placeholder="Name" value={m.name} onChange={(e) => set(i, { name: e.target.value })} className="flex-1" />
-              <Input placeholder="GitHub username" value={m.github} onChange={(e) => set(i, { github: e.target.value.replace(/^@/, "") })} className="w-40 sm:w-48" />
-              <button onClick={() => setS({ ...s, team: team.filter((_, j) => j !== i) })} className="px-1 text-neutral-500 hover:text-red-300" title="Remove">
+              <Input placeholder="Name" value={m.name} onChange={(e) => set(i, { name: e.target.value })} className="min-w-0 flex-1 basis-32" />
+              <button onClick={() => setS({ ...s, team: team.filter((_, j) => j !== i) })} className="order-none px-1 text-neutral-500 transition-colors hover:text-red-300 sm:order-last" title="Remove" aria-label={`Remove ${m.name || "teammate"}`}>
                 ✕
               </button>
+              <Input placeholder="GitHub username" value={m.github} onChange={(e) => set(i, { github: e.target.value.replace(/^@/, "") })} className="w-full sm:w-48" />
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <Segmented<OS> value={m.os} onChange={(v) => set(i, { os: v })} options={[["mac", "Mac"], ["windows", "Windows"], ["linux", "Linux"]]} />
@@ -261,7 +283,7 @@ function TeamStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) {
       <Button kind="soft" onClick={add} disabled={team.length >= 8}>
         + Add teammate
       </Button>
-    </Card>
+    </StepPage>
   );
 }
 
@@ -269,8 +291,7 @@ function TeamStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) {
 function RulesStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) {
   const r = (k: keyof SetupData["rules"], v: unknown) => setS({ ...s, rules: { ...s.rules, [k]: v } });
   return (
-    <Card className="space-y-5">
-      <Head title="Overnight rules" sub="Everyone will be asleep, so decide these now. Agents never ask anything during the night." />
+    <StepPage title="Overnight rules" sub="Everyone will be asleep, so decide these now. Agents never ask anything during the night.">
       <div className="space-y-1">
         <Toggle on={s.rules.review} onChange={(v) => r("review", v)} label="A second agent reviews every change" hint="Recommended. Catches mistakes before they merge." />
         <Toggle on={s.rules.stealing} onChange={(v) => r("stealing", v)} label="Idle computers help other teammates' areas" hint="If someone's list runs dry, they pick up waiting work from others." />
@@ -310,7 +331,7 @@ function RulesStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) 
       <Field label="How do we check the project works?" hint="optional; the planner suggests one">
         <Input placeholder="e.g. npm test && npm run build" value={s.rules.check} onChange={(e) => r("check", e.target.value)} />
       </Field>
-    </Card>
+    </StepPage>
   );
 }
 
@@ -361,8 +382,7 @@ function PlanStep({ app, s }: { app: AppState; s: SetupData }) {
   const update = (id: string, patch: Partial<Task>) => tasks && setTasks(tasks.map((t) => (t.id === id ? { ...t, ...patch } : t)));
 
   return (
-    <Card className="space-y-5">
-      <Head title="Tonight's plan" sub="An AI planner turns your answers into shared contracts and small tasks for each teammate. Read it over: this is what gets built." />
+    <StepPage title="Tonight's plan" sub="An AI planner turns your answers into shared contracts and small tasks for each teammate. Read it over: this is what gets built.">
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={generate} busy={job.running}>
           {tasks?.length ? "Regenerate plan" : "Generate the plan"}
@@ -417,7 +437,7 @@ function PlanStep({ app, s }: { app: AppState; s: SetupData }) {
                     .filter((t) => t.lane === lane)
                     .map((t) => (
                       <div key={t.id} className="rounded-md bg-[#0e0e0e] border border-night-700">
-                        <button onClick={() => setOpen(open === t.id ? null : t.id)} className="flex w-full items-center gap-2 px-3 py-2 text-left">
+                        <button onClick={() => setOpen(open === t.id ? null : t.id)} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left transition-colors duration-200 hover:bg-white/[0.03]">
                           <span className="text-[11px] font-semibold text-neutral-500">{t.id}</span>
                           <span className="flex-1 text-sm text-neutral-200">{t.title}</span>
                           {t.depends_on?.length ? <span className="text-[11px] text-neutral-600">after {t.depends_on.join(", ")}</span> : null}
@@ -457,7 +477,7 @@ function PlanStep({ app, s }: { app: AppState; s: SetupData }) {
         )
       )}
       {tasks && !tasks.length && !job.running && <p className="text-sm text-neutral-500">No tasks yet. Generate the plan, or use "Edit as text" after generating to write your own.</p>}
-    </Card>
+    </StepPage>
   );
 }
 
@@ -534,8 +554,7 @@ function ShareStep({ app, s, reload }: { app: AppState; s: SetupData; reload: ()
 3. Get Nightshift:  git clone ${NIGHTSHIFT_REPO} && cd nightshift && npm install && npm start
 4. In the page that opens, click "Join my team" and paste: ${repoLink || "<project link>"}`;
   return (
-    <Card className="space-y-5">
-      <Head title="Share with the team" sub="This saves the plan to GitHub and creates the team's message board, where agents talk overnight." />
+    <StepPage title="Share with the team" sub="This saves the plan to GitHub and creates the team's message board, where agents talk overnight.">
       {pre && pre.files.length > 0 && <div className="text-sm text-neutral-400">{pre.files.length} new or changed file{pre.files.length === 1 ? "" : "s"} will be pushed to {pre.repo ?? "GitHub"}.</div>}
       <Button onClick={share} busy={busy}>
         {app.board?.issue ? "Push the latest plan" : "Share the plan"}
@@ -588,7 +607,7 @@ function ShareStep({ app, s, reload }: { app: AppState; s: SetupData; reload: ()
           <pre className="whitespace-pre-wrap rounded-md bg-night-950 p-4 text-xs leading-relaxed text-neutral-300">{message}</pre>
         </div>
       </details>
-    </Card>
+    </StepPage>
   );
 }
 
@@ -638,8 +657,7 @@ function ComputerStep({ app, s, reload }: { app: AppState; s: SetupData; reload:
   const ghMismatch = tools?.ghLogin && me?.github && tools.ghLogin.toLowerCase() !== me.github.toLowerCase();
 
   return (
-    <Card className="space-y-5">
-      <Head title="Set up this computer" sub="Each teammate does this on their own computer before bed." />
+    <StepPage title="Set up this computer" sub="Each teammate does this on their own computer before bed.">
       <Field label="Which teammate are you?">
         <div className="flex flex-wrap gap-2">
           {s.team.map((m) => (
@@ -715,7 +733,7 @@ function ComputerStep({ app, s, reload }: { app: AppState; s: SetupData; reload:
           </div>
         </>
       )}
-    </Card>
+    </StepPage>
   );
 }
 
@@ -749,8 +767,7 @@ function StartStep({ app, reload, goTonight }: { app: AppState; reload: () => Pr
     setBusy(false);
   };
   return (
-    <Card className="space-y-6">
-      <Head title="Start the night" sub="Leave your computer plugged in with the lid open. Nobody will be asked anything until morning." />
+    <StepPage title="Start the night" sub="Leave your computer plugged in with the lid open. Nobody will be asked anything until morning.">
       <div className="grid gap-2 sm:grid-cols-2">
         {(snap?.nodes ?? []).map((n) => (
           <div key={n.id} className="flex items-center gap-3 rounded-md bg-[#0e0e0e] px-3 py-2.5 border border-night-700">
@@ -788,19 +805,26 @@ function StartStep({ app, reload, goTonight }: { app: AppState; reload: () => Pr
           />
         </div>
       )}
-    </Card>
+    </StepPage>
   );
 }
 
-function Head({ title, sub }: { title: string; sub: string }) {
-  const tag: Record<string, string> = {
-    "Tell us about the hackathon": "Step 1 · Hackathon",
-    "Who's on the team?": "Step 2 · Team",
-    "Overnight rules": "Step 3 · Rules",
-    "Tonight's plan": "Step 4 · Plan",
-    "Share with the team": "Step 5 · Share",
-    "Set up this computer": "Step 6 · Your computer",
-    "Start the night": "Step 7 · Start",
-  };
-  return <Title tag={tag[title]} title={title} sub={sub} />;
+/** Which step is on screen, for the "03 / 07" label. */
+const StepCtx = createContext<{ n: number; total: number; label: string }>({ n: 1, total: STEPS.length, label: "" });
+
+/** One onboarding page: the question on the left, the answers on the right (Upwork-style). */
+function StepPage({ title, sub, children }: { title: string; sub: string; children: ReactNode }) {
+  const { n, total, label } = useContext(StepCtx);
+  return (
+    <div className="grid gap-8 md:grid-cols-[minmax(0,5fr)_minmax(0,8fr)] md:gap-14">
+      <div className="md:sticky md:top-24 md:self-start">
+        <div className="font-mono text-xs text-neutral-500">
+          <span className="text-copper">{String(n).padStart(2, "0")}</span> / {String(total).padStart(2, "0")} · {label}
+        </div>
+        <h1 className="mt-4 text-4xl font-light leading-[1.08] text-cream sm:text-5xl">{title}</h1>
+        <p className="mt-4 max-w-md text-[15px] leading-relaxed text-neutral-400">{sub}</p>
+      </div>
+      <div className="min-w-0 space-y-5">{children}</div>
+    </div>
+  );
 }

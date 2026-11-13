@@ -43,7 +43,7 @@ export function Welcome({ app, onOpened }: { app: AppState; onOpened: (tab?: "se
 
       {!mode && (
         <>
-          <section className="mx-auto grid max-w-6xl gap-10 px-5 pb-10 pt-14 sm:px-8 sm:pt-24 lg:grid-cols-[1.1fr_1fr]">
+          <section className="page-in-right mx-auto grid max-w-6xl gap-10 px-5 pb-10 pt-14 sm:px-8 sm:pt-24 lg:grid-cols-[1.1fr_1fr]">
             <div>
               <Tag>Overnight builds for hackathon teams</Tag>
               <h1 className="mt-5 text-5xl font-light leading-[1.05] text-cream sm:text-6xl">
@@ -69,19 +69,19 @@ export function Welcome({ app, onOpened }: { app: AppState; onOpened: (tab?: "se
                 ["02", "Sleep", "Each computer's agent builds its tasks, asks teammates' agents when stuck, and never waits for a human."],
                 ["03", "Review", "One report with every decision the agents made, and one pull request into main."],
               ].map(([n, t, b], i) => (
-                <div key={n} className={`py-8 sm:px-6 ${i ? "sm:border-l sm:border-night-700" : "sm:pl-0"}`}>
-                  <div className="font-mono text-xs text-neutral-500">{n}</div>
+                <div key={n} className={`group py-8 transition-colors duration-300 sm:px-6 ${i ? "sm:border-l sm:border-night-700" : "sm:pl-0"}`}>
+                  <div className="font-mono text-xs text-neutral-500 transition-colors duration-300 group-hover:text-copper">{n}</div>
                   <div className="mt-6 text-lg font-light text-cream">{t}</div>
                   <p className="mt-2 text-sm leading-relaxed text-neutral-400">{b}</p>
                 </div>
               ))}
             </div>
             <div className="flex flex-wrap gap-x-6 gap-y-2 border-t border-night-700 py-6 text-sm">
-              <button onClick={() => setMode("open")} className="text-neutral-300 hover:text-white">
-                Open a project folder →
+              <button onClick={() => setMode("open")} className="group text-neutral-300 transition-colors hover:text-white">
+                Open a project folder <span className="inline-block transition-transform duration-200 group-hover:translate-x-1">→</span>
               </button>
-              <button onClick={() => act(() => api.practice(), "tonight")} className="text-neutral-300 hover:text-white">
-                Watch a practice night (no AI used) →
+              <button onClick={() => act(() => api.practice(), "tonight")} className="group text-neutral-300 transition-colors hover:text-white">
+                Watch a practice night (no AI used) <span className="inline-block transition-transform duration-200 group-hover:translate-x-1">→</span>
               </button>
             </div>
           </section>
@@ -89,7 +89,7 @@ export function Welcome({ app, onOpened }: { app: AppState; onOpened: (tab?: "se
       )}
 
       {mode && (
-        <Card className="mx-auto mt-14 max-w-xl">
+        <Card className="page-in-right mx-auto mt-14 max-w-xl">
           <button onClick={() => setMode(null)} className="mb-4 text-sm text-neutral-400 hover:text-neutral-200">
             ← Back
           </button>
@@ -169,7 +169,7 @@ function HeroArt() {
     { x: 70, y: 160, n: "AT" },
   ];
   return (
-    <div className="relative overflow-hidden rounded-md border border-night-700 bg-[#141414]">
+    <div className="fade-in relative overflow-hidden rounded-md border border-night-700 bg-[#141414] transition-colors duration-300 hover:border-night-600">
       <div className="copper-grid absolute inset-0" />
       <Rays className="absolute bottom-0 left-0 h-1/2 w-2/3 opacity-60" />
       <svg viewBox="0 0 400 320" className="relative block w-full">

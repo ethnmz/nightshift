@@ -45,3 +45,34 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .packet { animation: packet-fade 3.2s ease forwards; }
 @keyframes spin-slow { to { transform: rotate(360deg) } }
 .spin-slow { animation: spin-slow 6s linear infinite; }
+
+/* ---------- polish: motion, focus, interaction ---------- */
+button:not(:disabled), [role="button"], summary, a { cursor: pointer; }
+:focus-visible { outline: 2px solid rgb(217 139 69 / 0.75); outline-offset: 3px; border-radius: 6px; }
+input:focus-visible, textarea:focus-visible, select:focus-visible { outline: none; }
+html { scroll-behavior: smooth; }
+
+@keyframes page-in-right { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes page-in-left { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+.page-in-right { animation: page-in-right 480ms cubic-bezier(.22,1,.36,1) both; }
+.page-in-left { animation: page-in-left 480ms cubic-bezier(.22,1,.36,1) both; }
+
+@keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.fade-in { animation: fade-in 280ms ease-out both; }
+
+/* Stagger children in a list as they appear. */
+.stagger > * { animation: fade-in 420ms cubic-bezier(.22,1,.36,1) both; }
+.stagger > *:nth-child(2) { animation-delay: 40ms; } .stagger > *:nth-child(3) { animation-delay: 80ms; }
+.stagger > *:nth-child(4) { animation-delay: 120ms; } .stagger > *:nth-child(5) { animation-delay: 160ms; }
+.stagger > *:nth-child(6) { animation-delay: 200ms; } .stagger > *:nth-child(n+7) { animation-delay: 240ms; }
+
+@keyframes shimmer { from { background-position: -400px 0; } to { background-position: 400px 0; } }
+.shimmer { background: linear-gradient(90deg, #1a1a1a 0%, #262626 50%, #1a1a1a 100%); background-size: 800px 100%; animation: shimmer 1.4s linear infinite; }
+
+/* Interactive rows and cards lift slightly. */
+.lift { transition: transform 220ms cubic-bezier(.22,1,.36,1), border-color 220ms, background-color 220ms; }
+.lift:hover { transform: translateY(-2px); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
