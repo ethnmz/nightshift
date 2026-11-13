@@ -38,6 +38,16 @@ Your browser opens Nightshift.
 
 - **Tonight:** a live map of the team. Each teammate's agent sits around the shared night branch, and animated dots show work being merged, finished work unblocking a teammate, questions and answers, and hand-offs when a plan runs out of usage. Below the map is a plain-language "what just happened" feed and the task list.
 - **Morning:** the report covers what merged, what was set aside and why, and **every decision the agents made on their own**. One button opens the pull request. Merging to `main` is always a person's call.
+  - **Submission kit:** your agent reads the finished code (read-only) and drafts *How to run*, a *demo script*, *what works vs. what's mocked*, and a *Devpost write-up*. Each part has a Copy button, and one click adds `SUBMISSION.md` to the pull request.
+  - **Retry with a hint:** each set-aside task gets a hint box. Retry queues it as a new task (for example `A3-r2`) that sees why it failed, the kept work, and your hint.
+- **Day shift:** on the Tonight tab, keep agents building leftovers and retries while you work. List the folders you're editing and agents stay out of them.
+
+## Sleeping easy
+
+- **Check from your phone:** one progress note on the GitHub board issue is edited in place every few minutes. It shows merged count, what each teammate's computer is doing, what was set aside, and the deadline cutoff.
+- **Alerts only for real problems:** the lead is @mentioned on the board, so the GitHub app on your phone buzzes. That happens when the full check fails twice in a row, a laptop goes silent, every plan hits its limit, a login stops working, the usage cap is reached, or the night finishes. Each kind fires at most once an hour. GitHub doesn't notify you about your own posts, so alerts raised on the lead's computer are relayed by a teammate's computer.
+- **Lost login:** if a teammate's Claude Code or Codex login stops working, that computer hands its tasks to the others, pauses, checks again every 30 minutes, and resumes on its own after someone logs back in.
+- **Deadline-aware:** the submission deadline from the setup becomes a cutoff (2 hours before by default). After that no new tasks start and work in progress finishes. Tasks are `must` or `nice`. Must-haves are always built first, and only must-haves start near the cutoff or near the usage cap.
 
 ## How it stays hands-off and safe
 
@@ -57,7 +67,7 @@ Your browser opens Nightshift.
 npm test
 ```
 
-That runs 48 tests: permission policy, file ownership, scheduler, claim races, commands that would prompt, 4-computer nights with stand-in agents, Codex, usage-limit hand-offs, the setup wizard backend, and the app API. An opt-in live test runs one real Claude task (`NIGHTSHIFT_LIVE=1 npx vitest run test/live.test.ts`) and checks it finishes with zero denied actions.
+That runs 57 tests: permission policy, file ownership, scheduler, claim races, commands that would prompt, 4-computer nights with stand-in agents, Codex, usage-limit and lost-login hand-offs, alerts, the live status note, deadline and must-first scheduling, retries, day shifts, the submission kit, the setup wizard backend, and the app API. An opt-in live test runs one real Claude task (`NIGHTSHIFT_LIVE=1 npx vitest run test/live.test.ts`) and checks it finishes with zero denied actions.
 
 ## Not verified yet
 

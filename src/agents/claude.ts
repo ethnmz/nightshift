@@ -61,6 +61,7 @@ export class ClaudeAdapter implements Adapter {
     let ok = false;
     let limitedUntil: number | undefined;
     let limited = false;
+    let authLost = false;
 
     try {
       const q = query({
@@ -146,6 +147,10 @@ export class ClaudeAdapter implements Adapter {
           }
         }
         if (m.type === "assistant" && (m as { error?: string }).error === "rate_limit") limited = true;
+        if (m.type === "assistant" && ["authentication_failed", "oauth_org_not_allowed", "billing_error", "account_on_hold"].includes(String((m as { error?: string }).error))) {
+          authLost = true;
+          ac.abort();
+        }
         if (m.type === "assistant") {
           for (const b of m.message.content as Array<{ type: string; text?: string; name?: string; input?: unknown }>) {
             if (b.type === "text" && b.text) req.onEvent({ kind: "text", text: b.text.slice(0, 2000) });
@@ -173,6 +178,9 @@ export class ClaudeAdapter implements Adapter {
       clearTimeout(wall);
       clearInterval(stuck);
       req.signal?.removeEventListener("abort", onOuterAbort);
+    }
+    if (!ok && (authLost || /invalid api key|please run \/login|not logged in|authentication_failed|oauth token (has )?expired|\b401\b/i.test(text))) {
+      return { ok, reason: "auth", text: text || "login no longer valid", costUsd, sessionId, denials };
     }
     if (!ok && (limited || /usage limit|rate limit|hit your limit/i.test(text))) {
       return { ok, reason: "usage_limit", resumeAt: limitedUntil, text: text || "usage limit reached", costUsd, sessionId, denials };

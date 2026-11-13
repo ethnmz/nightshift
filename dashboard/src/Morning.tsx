@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { api } from "./api";
-import { Button, Card, Note, Title } from "./ui";
+import { api, Snapshot } from "./api";
+import { Button, Card, Copy, Input, Note, Title } from "./ui";
 
 export function Morning() {
   const [md, setMd] = useState<string | null>(null);
@@ -45,6 +45,8 @@ export function Morning() {
       )}
       {err && <Note kind="error">{err}</Note>}
       {md === null && !err && <div className="text-neutral-500">Building the report…</div>}
+      <SubmissionKit />
+      <Retries />
       {md && <Card>{renderMarkdown(md)}</Card>}
     </div>
   );
@@ -99,4 +101,114 @@ function renderMarkdown(md: string): ReactNode[] {
     else if (l.trim()) out.push(<p key={i} className="my-2 text-sm text-neutral-300">{inline(l)}</p>);
   }
   return out;
+}
+
+/** README, demo script and Devpost draft from what actually got built. */
+function SubmissionKit() {
+  const [busy, setBusy] = useState(false);
+  const [draft, setDraft] = useState<{ markdown: string; sections: { title: string; body: string }[] } | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; t: string } | null>(null);
+  return (
+    <Card className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex-1">
+          <div className="text-lg font-light text-cream">Submission kit</div>
+          <p className="text-sm text-neutral-400">Your agent reads the finished code (read-only) and drafts how to run it, a demo script, what's real vs. mocked, and a Devpost write-up. Takes a few minutes.</p>
+        </div>
+        <Button
+          busy={busy}
+          onClick={async () => {
+            setBusy(true);
+            setMsg(null);
+            try {
+              setDraft(await api.draftSubmission());
+            } catch (e) {
+              setMsg({ ok: false, t: String((e as Error).message) });
+            }
+            setBusy(false);
+          }}
+        >
+          {draft ? "Draft again" : "Draft README, demo and Devpost"}
+        </Button>
+      </div>
+      {draft && (
+        <div className="space-y-3">
+          {draft.sections.map((s) => (
+            <div key={s.title} className="rounded-md border border-night-700">
+              <div className="flex items-center justify-between border-b border-night-700 px-4 py-2">
+                <span className="text-sm text-cream">{s.title}</span>
+                <Copy text={s.body} />
+              </div>
+              <pre className="max-h-72 overflow-auto whitespace-pre-wrap px-4 py-3 text-[13px] leading-relaxed text-neutral-300">{s.body}</pre>
+            </div>
+          ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <Copy text={draft.markdown} label="Copy everything" />
+            <Button
+              kind="soft"
+              onClick={async () => {
+                try {
+                  const r = await api.commitSubmission(draft.markdown);
+                  setMsg({ ok: true, t: r.sha === "unchanged" ? "SUBMISSION.md is already up to date." : "Added SUBMISSION.md to the night branch; it is part of the pull request." });
+                } catch (e) {
+                  setMsg({ ok: false, t: String((e as Error).message) });
+                }
+              }}
+            >
+              Add to the pull request
+            </Button>
+          </div>
+        </div>
+      )}
+      {msg && <Note kind={msg.ok ? "ok" : "error"}>{msg.t}</Note>}
+    </Card>
+  );
+}
+
+/** Set-aside tasks: retry with a hint (runs in the next day shift or night). */
+function Retries() {
+  const [snap, setSnap] = useState<Snapshot | null>(null);
+  const [hints, setHints] = useState<Record<string, string>>({});
+  const [done, setDone] = useState<Record<string, string>>({});
+  useEffect(() => {
+    api.snapshot().then(setSnap).catch(() => {});
+  }, []);
+  const parked = (snap?.tasks ?? []).filter((t) => t.readiness === "parked" && !snap!.tasks.some((x) => x.retry_of === (t.retry_of ?? t.id) && x.id !== t.id && x.readiness !== "parked"));
+  if (!parked.length) return null;
+  return (
+    <Card className="space-y-3">
+      <div>
+        <div className="text-lg font-light text-cream">Set aside overnight</div>
+        <p className="text-sm text-neutral-400">Add a hint and retry. Retries run in the next day shift (Tonight tab) or the next night.</p>
+      </div>
+      {parked.map((t) => (
+        <div key={t.id} className="space-y-2 rounded-md border border-night-700 p-3">
+          <div className="text-sm text-cream">
+            {t.id} · {t.title}
+          </div>
+          {t.state?.note && <div className="text-xs text-neutral-500">Why: {t.state.note.slice(0, 300)}</div>}
+          {done[t.id] ? (
+            <div className="text-xs text-copper">{done[t.id]}</div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              <Input className="min-w-60 flex-1" placeholder="Hint, e.g. 'the test needs the dev server; mock fetch instead'" value={hints[t.id] ?? ""} onChange={(e) => setHints({ ...hints, [t.id]: e.target.value })} />
+              <Button
+                kind="soft"
+                onClick={async () => {
+                  try {
+                    const r = await api.retry(t.id, hints[t.id] ?? "");
+                    setDone({ ...done, [t.id]: `Queued as ${r.id}. Start a day shift on the Tonight tab to run it now.` });
+                  } catch (e) {
+                    setDone({ ...done, [t.id]: String((e as Error).message) });
+                  }
+                }}
+              >
+                Retry
+              </Button>
+            </div>
+          )}
+        </div>
+      ))}
+    </Card>
+  );
 }

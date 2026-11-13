@@ -17,7 +17,7 @@ export interface SetupData {
   event: { name: string; track: string; deadline: string; links: string };
   idea: { pitch: string; problem: string; demo: string; must: string; nice: string; stack: string; rules: string };
   team: Member[];
-  rules: { perComputer: number; usageCap: number; review: boolean; stealing: boolean; contractsOwner: string; check: string };
+  rules: { perComputer: number; usageCap: number; review: boolean; stealing: boolean; contractsOwner: string; check: string; alerts: boolean; stopBefore: number };
 }
 export interface AppState {
   project: { path: string; name: string; hasSetup: boolean; tasks: number; hasCommits: boolean; unshared: number } | null;
@@ -52,6 +52,8 @@ export interface Task {
   depends_on?: string[];
   contracts?: string[];
   acceptance?: string[];
+  priority?: "must" | "nice";
+  retry_of?: string;
 }
 export interface TaskState {
   status: "claimed" | "done" | "parked" | "open";
@@ -119,6 +121,11 @@ export interface Snapshot {
   agent: Agent | "fake";
   auth: "subscription" | "api_key";
   pausedUntil: number;
+  authLost?: boolean;
+  day?: boolean;
+  reserves?: Record<string, string[]>;
+  cutoffAt?: number | null;
+  deadline?: string | null;
   usage: Record<string, UsageInfo>;
   tasks: TaskRow[];
   running: RunningRow[];
@@ -162,7 +169,11 @@ export const api = {
   onboarding: () => req<{ repo: string; prompts: { id: string; name: string; os: OS; agent: Agent; markdown: string }[] }>("/api/onboarding"),
   preflight: (live: boolean) => req<{ checks: Check[]; ok: boolean; posted: boolean }>(`/api/preflight?live=${live ? 1 : 0}`, { method: "POST" }),
   autostart: (on: boolean) => post("/api/autostart", { on }),
-  start: (everyone: boolean) => post("/api/start", { everyone }),
+  start: (everyone: boolean, day = false) => post("/api/start", { everyone, day }),
+  reserve: (globs: string[]) => post<{ globs: string[] }>("/api/reserve", { globs }),
+  retry: (task: string, hint: string) => post<{ id: string }>("/api/retry", { task, hint }),
+  draftSubmission: () => post<{ markdown: string; sections: { title: string; body: string }[] }>("/api/submission"),
+  commitSubmission: (markdown: string) => post<{ sha: string }>("/api/submission/commit", { markdown }),
   stop: (team: boolean) => req(`/api/stop?team=${team ? 1 : 0}`, { method: "POST" }),
   snapshot: () => req<Snapshot>("/api/snapshot"),
   report: () => req<{ markdown: string; file: string }>("/api/report"),
@@ -174,5 +185,5 @@ export const EMPTY_SETUP: SetupData = {
   event: { name: "", track: "", deadline: "", links: "" },
   idea: { pitch: "", problem: "", demo: "", must: "", nice: "", stack: "", rules: "" },
   team: [],
-  rules: { perComputer: 2, usageCap: 25, review: true, stealing: true, contractsOwner: "", check: "" },
+  rules: { perComputer: 2, usageCap: 25, review: true, stealing: true, contractsOwner: "", check: "", alerts: true, stopBefore: 120 },
 };

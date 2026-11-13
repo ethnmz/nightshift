@@ -24,6 +24,7 @@ tasks:
     depends_on: []
     contracts: [docs/API.md]
     acceptance: ["<one-shot command that proves this task works>"]
+    priority: must          # must = needed for the demo / the brief's must-haves; nice = only if time allows
 ```
 
 Rules for the plan:
@@ -31,6 +32,6 @@ Rules for the plan:
 - **Tasks that can run at the same time must not have overlapping leases.**
 - Early tasks: project skeleton and test setup that others depend on. Last task: an end-to-end demo check.
 - Commands must be one-shot and non-interactive (no servers left running, no watchers, no prompts). They run in bash on Mac and Windows (Git Bash), so avoid OS-specific commands.
-- Stay inside the scope in idea.md; put nice-to-haves after must-haves.
+- Stay inside the scope in idea.md. Mark every task `priority: must` or `priority: nice`: must-haves and anything the demo needs are `must`; nice-to-haves are `nice`. Nightshift builds every `must` task before any `nice` one, and near the deadline or the usage cap it only builds `must` tasks.
 
 Do not ask questions; record assumptions in `.nightshift/assumptions.md`. Write the files and finish with a one-paragraph summary.

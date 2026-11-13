@@ -1,6 +1,6 @@
 import type { Task } from "../config.js";
 
-export type Role = "builder" | "fixer" | "contract" | "reviewer" | "answerer" | "planner";
+export type Role = "builder" | "fixer" | "contract" | "reviewer" | "answerer" | "planner" | "writer";
 
 /** The tools every worker gets through the in-process `nightshift` MCP server. None of them asks a human. */
 export interface NightshiftTools {
@@ -58,7 +58,7 @@ export interface AgentRequest {
 
 export interface AgentResult {
   ok: boolean;
-  reason?: "timeout" | "stuck" | "error" | "max_turns" | "budget" | "aborted" | "usage_limit";
+  reason?: "timeout" | "stuck" | "error" | "max_turns" | "budget" | "aborted" | "usage_limit" | "auth";
   /** When reason is usage_limit: when the plan's window resets (ms epoch), if reported. */
   resumeAt?: number;
   text: string;

@@ -2,8 +2,8 @@
 //  - GitHubIssueBoard: comments on one issue through `gh api` (ported from hackutd2026 tools/board:
 //    incremental `since=` polling with an id cursor, so a quiet poll costs one API call).
 //  - FileBoard: a shared JSONL file, for tests and for 4-nodes-on-one-Mac rehearsals.
-import { appendFileSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { appendFileSync, existsSync, readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { run } from "../exec.js";
 import { BoardMessage, Envelope, formatPost, parseEnvelope } from "./envelope.js";
 
@@ -14,7 +14,13 @@ export interface Board {
   /** Everything on the board (used once at startup to rebuild state, and by the report). */
   fetchAll(): Promise<BoardMessage[]>;
   describe(): string;
+  /** The night's live progress note, edited in place (one per night). */
+  upsertStatus(night: string, markdown: string): Promise<void>;
+  /** When the progress note was last written, or null if there is none yet. */
+  statusUpdatedAt(night: string): Promise<number | null>;
 }
+
+export const statusMarker = (night: string) => `<!-- nightshift-status night=${night} -->`;
 
 function readCursor(path?: string): string | undefined {
   if (!path || !existsSync(path)) return undefined;
@@ -36,6 +42,16 @@ export class FileBoard implements Board {
   }
   describe() {
     return `file ${this.file}`;
+  }
+  private statusFile(night: string) {
+    return join(dirname(this.file), `status-${night}.md`);
+  }
+  async upsertStatus(night: string, markdown: string) {
+    writeFileSync(this.statusFile(night), `${statusMarker(night)}\n${markdown}`);
+  }
+  async statusUpdatedAt(night: string) {
+    const f = this.statusFile(night);
+    return existsSync(f) ? statSync(f).mtimeMs : null;
   }
   async post(human: string, env: Envelope) {
     const text = formatPost(human, env);
@@ -73,6 +89,28 @@ export class GitHubIssueBoard implements Board {
   describe() {
     return `github ${this.repo}#${this.issue}`;
   }
+  private async findStatus(night: string): Promise<BoardMessage | undefined> {
+    const all = await this.fetchAll();
+    return all.filter((m) => m.text.startsWith(statusMarker(night))).pop();
+  }
+  async upsertStatus(night: string, markdown: string) {
+    const body = `${statusMarker(night)}\n${markdown}`;
+    const cache = this.cursorPath ? `${this.cursorPath}-status-${night}` : undefined;
+    let id = cache && existsSync(cache) ? readFileSync(cache, "utf8").trim() : "";
+    if (!id) id = (await this.findStatus(night))?.id ?? "";
+    if (id) {
+      const r = await run("gh", ["api", "-X", "PATCH", `repos/${this.repo}/issues/comments/${id}`, "--input", "-"], { input: JSON.stringify({ body }), timeoutMs: 30_000 });
+      if (r.code === 0) return;
+      id = ""; // deleted or not ours any more: create a new one
+    }
+    const r = await run("gh", ["api", "-X", "POST", this.endpoint(), "--input", "-", "--jq", ".id"], { input: JSON.stringify({ body }), timeoutMs: 30_000 });
+    if (r.code !== 0) throw new Error("status post failed");
+    if (cache) writeCursor(cache, r.stdout.trim());
+  }
+  async statusUpdatedAt(night: string) {
+    const m = await this.findStatus(night);
+    return m ? Date.parse(m.updatedAt ?? m.createdAt) : null;
+  }
   private endpoint(q = "") {
     return `repos/${this.repo}/issues/${this.issue}/comments${q}`;
   }
@@ -89,14 +127,14 @@ export class GitHubIssueBoard implements Board {
     throw new Error("board post failed after retries");
   }
   private async fetch(q: string): Promise<BoardMessage[]> {
-    const jq = '.[] | {id, user: .user.login, created_at, body} | tojson';
+    const jq = '.[] | {id, user: .user.login, created_at, updated_at, body} | tojson';
     const r = await run("gh", ["api", "--paginate", this.endpoint(q), "--jq", jq], { timeoutMs: 60_000 });
     if (r.code !== 0) throw new Error(`board fetch: ${r.stderr.trim().slice(0, 300)}`);
     return r.stdout
       .split("\n")
       .filter(Boolean)
       .map((l) => JSON.parse(l))
-      .map((o) => ({ id: String(o.id), author: o.user, createdAt: o.created_at, text: o.body ?? "", env: parseEnvelope(o.body ?? "") }))
+      .map((o) => ({ id: String(o.id), author: o.user, createdAt: o.created_at, updatedAt: o.updated_at, text: o.body ?? "", env: parseEnvelope(o.body ?? "") }))
       .sort((a, b) => Number(a.id) - Number(b.id));
   }
   async fetchAll() {

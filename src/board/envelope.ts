@@ -29,6 +29,8 @@ export const EnvelopeType = z.enum([
   "gate_failed",
   "budget",
   "stop",
+  "alert", // a real problem; the human line @mentions the lead so GitHub notifies their phone
+  "reserve", // day shift: path globs humans are working on (agents keep out)
 ]);
 export type EnvelopeType = z.infer<typeof EnvelopeType>;
 
@@ -49,6 +51,7 @@ export interface BoardMessage {
   id: string; // board-assigned, monotonically increasing per board
   author: string; // GitHub login or "file"
   createdAt: string;
+  updatedAt?: string;
   text: string; // full raw text
   env?: Envelope; // parsed envelope, if any
 }

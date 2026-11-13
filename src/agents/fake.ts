@@ -54,6 +54,8 @@ export class FakeAdapter implements Adapter {
       return done(true, `Fake answer from ${req.task?.lane ?? "lane"}: use the contract as written.`);
     }
     if (req.role === "planner") return done(true, "planner not available in fake mode");
+    if (req.role === "writer")
+      return done(true, "## How to run\n`npm install && npm start`\n\n## Demo script\n1. Open the app\n2. Show the main flow\n\n## What works and what's mocked\n- Works: the main flow\n- Mocked: sample data\n\n## Devpost draft\n### Inspiration\nPractice.\n### What it does\nIt works.");
 
     req.onEvent({ kind: "text", text: `fake ${req.role} working on ${req.task?.id}` });
     if (f.stuck) {
@@ -64,6 +66,8 @@ export class FakeAdapter implements Adapter {
     if (f.sleep_ms) await sleep(Number(f.sleep_ms), req.signal);
     if (req.signal?.aborted) return done(false, "aborted", "aborted");
     if (f.fail === true || (f.fail === "first" && n === 1)) return done(false, "fake failure", "error");
+    const authHere = !f.auth_fail_node || f.auth_fail_node === this.node;
+    if (authHere && (f.auth_fail === true || (f.auth_fail === "first" && n === 1))) return done(false, "authentication_failed: please run /login", "auth");
     const limitHere = !f.usage_limit_node || f.usage_limit_node === this.node;
     if (limitHere && (f.usage_limit === true || (f.usage_limit === "first" && n === 1))) {
       req.onEvent({ kind: "usage", usage: { status: "limited", window: "five_hour", resetsAt: Date.now() + Number(f.reset_ms ?? 60_000) } });

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, AppState, BoardRow, NodeSpec, Snapshot, TaskRow } from "./api";
-import { Button, Card, Note, STATUS, agentLabel, ago, initials } from "./ui";
+import { Button, Card, Input, Note, STATUS, agentLabel, ago, initials } from "./ui";
 
 // ---------- layout ----------
 const W = 900;
@@ -196,7 +196,8 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
             <span className="text-2xl text-neutral-500"> / {snap.tasks.length} merged</span>
           </div>
           <div className="text-sm text-neutral-400">
-            Night of {snap.night}
+            {snap.day ? "Day shift on" : "Night of"} {snap.night}
+            {snap.cutoffAt ? ` · no new tasks after ${new Date(snap.cutoffAt).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}` : ""}
             {parked ? ` · ${parked} set aside for the morning` : ""}
             {snap.agent !== "fake" && snap.auth === "subscription" ? ` · est. usage $${spent.toFixed(2)} (not billed)` : ""}
           </div>
@@ -315,6 +316,8 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
         </div>
       </Card>
 
+      {snap.authLost && <Note kind="warn">This computer's agent login stopped working, so its tasks went to teammates. Sign in again ({snap.agent === "codex" ? "codex login" : "run claude, then /login"}); it resumes on its own within 30 minutes.</Note>}
+      <DayShift snap={snap} running={running} reload={reload} />
       <div className="grid gap-5 md:grid-cols-[1fr_1fr]">
         <Card>
           <div className="mb-4 text-lg font-light text-cream">What just happened</div>
@@ -355,5 +358,59 @@ function TaskList({ tasks, nodes, compact }: { tasks: TaskRow[]; nodes: NodeSpec
       ))}
       {compact && !shown.length && <li className="text-sm text-neutral-500">Nothing in progress right now.</li>}
     </ul>
+  );
+}
+
+/** Day shift: keep agents building leftovers and retries while people work, outside reserved folders. */
+function DayShift({ snap, running, reload }: { snap: Snapshot; running: boolean; reload: () => Promise<AppState | null> }) {
+  const mine = snap.reserves?.[snap.node.id] ?? [];
+  const [text, setText] = useState(mine.join(", "));
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const others = Object.entries(snap.reserves ?? {}).filter(([id, g]) => id !== snap.node.id && g.length);
+  const left = snap.tasks.filter((t) => ["ready", "waiting", "stale"].includes(t.readiness)).length;
+  const save = async (globs: string[]) => {
+    setBusy(true);
+    try {
+      await api.reserve(globs);
+      setMsg(globs.length ? "Agents will stay out of those folders." : "Folders released.");
+    } catch (e) {
+      setMsg(String((e as Error).message));
+    }
+    setBusy(false);
+  };
+  if (running && !snap.day && !mine.length) return null;
+  return (
+    <Card className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex-1">
+          <div className="text-lg font-light text-cream">Day shift</div>
+          <p className="text-sm text-neutral-400">Keep agents building {left ? `the ${left} unfinished task${left === 1 ? "" : "s"} and any retries` : "retries"} while you work. Tell them which folders you're editing so they stay out.</p>
+        </div>
+        {!running && (
+          <div className="flex gap-2">
+            <Button kind="soft" busy={busy} onClick={async () => (await api.start(false, true), void reload())}>
+              Start on this computer
+            </Button>
+            <Button busy={busy} onClick={async () => (await api.start(true, true), void reload())}>
+              Start for everyone
+            </Button>
+          </div>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input className="min-w-60 flex-1" placeholder="Folders we're working on, e.g. frontend/src/screens/**, docs/**" value={text} onChange={(e) => setText(e.target.value)} />
+        <Button kind="soft" busy={busy} onClick={() => save(text.split(",").map((x) => x.trim()).filter(Boolean))}>
+          Reserve
+        </Button>
+        {mine.length > 0 && (
+          <Button kind="ghost" onClick={() => (setText(""), save([]))}>
+            Release
+          </Button>
+        )}
+      </div>
+      {others.length > 0 && <div className="text-xs text-neutral-500">Also reserved: {others.map(([id, g]) => `${snap.nodes.find((n) => n.id === id)?.name ?? id}: ${g.join(", ")}`).join(" · ")}</div>}
+      {msg && <div className="text-xs text-copper">{msg}</div>}
+    </Card>
   );
 }

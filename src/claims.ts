@@ -33,10 +33,23 @@ export class Claims {
     return `refs/nightshift-remote/${this.night}/state/${task}`;
   }
 
+  /**
+   * Another process in the same checkout (the app, a day shift) may fetch the same refs at the
+   * same moment; git then refuses one update ("incorrect old value"). Retry briefly.
+   */
+  private async fetchRetry(args: string[]) {
+    let f = await this.git.raw(args);
+    for (let i = 0; i < 3 && f.code !== 0 && /incorrect old value|cannot lock ref|unable to update local ref/i.test(f.stderr); i++) {
+      await new Promise((r) => setTimeout(r, 150 + Math.random() * 350));
+      f = await this.git.raw(args);
+    }
+    return f;
+  }
+
   /** Fetch every state ref from the remote and return them by task id. */
   async list(): Promise<Map<string, StateRef>> {
     const spec = `+refs/nightshift/${this.night}/state/*:${this.mirror()}*`;
-    const f = await this.git.raw(["fetch", "--quiet", "--prune", "--no-tags", this.remote, spec]);
+    const f = await this.fetchRetry(["fetch", "--quiet", "--prune", "--no-tags", this.remote, spec]);
     if (f.code !== 0) throw new Error(`fetch state refs: ${f.stderr.trim()}`);
     const out = await this.git.ok(["for-each-ref", "--format=%(refname)%00%(objectname)%00%(contents:subject)", this.mirror()]);
     const m = new Map<string, StateRef>();
@@ -91,7 +104,7 @@ export class Claims {
 
   async listTasks(): Promise<unknown[]> {
     const mirror = `refs/nightshift-remote/${this.night}/tasks/`;
-    const f = await this.git.raw(["fetch", "--quiet", "--prune", "--no-tags", this.remote, `+refs/nightshift/${this.night}/tasks/*:${mirror}*`]);
+    const f = await this.fetchRetry(["fetch", "--quiet", "--prune", "--no-tags", this.remote, `+refs/nightshift/${this.night}/tasks/*:${mirror}*`]);
     if (f.code !== 0) throw new Error(`fetch task refs: ${f.stderr.trim()}`);
     const out = await this.git.ok(["for-each-ref", "--format=%(contents:subject)", mirror]);
     return out

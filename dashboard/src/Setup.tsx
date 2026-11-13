@@ -55,7 +55,7 @@ export function SetupWizard({ app, reload, goTonight }: { app: AppState; reload:
 
   return (
     <div className="grid gap-8 md:grid-cols-[200px_1fr]">
-      <ol className="flex overflow-x-auto border-night-700 md:flex-col md:border-t">
+      <ol className="scroll-thin flex overflow-x-auto border-night-700 md:flex-col md:border-t">
         {STEPS.map((x, i) => (
           <li key={x.id} className="md:border-b md:border-night-700">
             <button onClick={() => setStep(x.id)} className={`flex w-full items-center gap-3 whitespace-nowrap px-3 py-3 text-left text-sm transition ${step === x.id ? "bg-night-850 text-cream" : "text-neutral-500 hover:text-neutral-200"}`}>
@@ -296,6 +296,17 @@ function RulesStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) 
           ))}
         </select>
       </Field>
+      <div className="space-y-1 rounded-md border border-night-700 p-2">
+        <Toggle
+          on={s.rules.alerts ?? true}
+          onChange={(v) => r("alerts", v)}
+          label="Notify me on GitHub if something goes wrong overnight"
+          hint={s.team[0]?.github ? `Mentions @${s.team[0].github} on the team board, so the GitHub app on your phone buzzes. Only for real problems, plus once when the night is finished.` : "Add your GitHub username in the Team step (first teammate) so alerts can reach you."}
+        />
+      </div>
+      <Field label="Stop starting new work before the deadline" hint={s.event.deadline ? `deadline ${s.event.deadline.replace("T", " ")}` : "set a deadline in step 1"}>
+        <Segmented value={String(s.rules.stopBefore ?? 120)} onChange={(v) => r("stopBefore", Number(v))} options={[["60", "1 hour"], ["120", "2 hours"], ["180", "3 hours"], ["0", "Never"]]} />
+      </Field>
       <Field label="How do we check the project works?" hint="optional; the planner suggests one">
         <Input placeholder="e.g. npm test && npm run build" value={s.rules.check} onChange={(e) => r("check", e.target.value)} />
       </Field>
@@ -410,6 +421,17 @@ function PlanStep({ app, s }: { app: AppState; s: SetupData }) {
                           <span className="text-[11px] font-semibold text-neutral-500">{t.id}</span>
                           <span className="flex-1 text-sm text-neutral-200">{t.title}</span>
                           {t.depends_on?.length ? <span className="text-[11px] text-neutral-600">after {t.depends_on.join(", ")}</span> : null}
+                          <span
+                            role="button"
+                            title="Must-haves are built first. Nice-to-haves only if there is time and usage left."
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void saveTasks(tasks.map((x) => (x.id === t.id ? { ...x, priority: x.priority === "nice" ? "must" : "nice" } : x)));
+                            }}
+                            className={`rounded-sm border px-1.5 text-[10px] ${t.priority === "nice" ? "border-night-600 text-neutral-500" : "border-copper/60 text-copper"}`}
+                          >
+                            {t.priority === "nice" ? "nice" : "must"}
+                          </span>
                         </button>
                         {open === t.id && (
                           <div className="space-y-2 border-t border-night-700 p-3">

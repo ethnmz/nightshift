@@ -23,13 +23,13 @@ export function createPractice(dir: string): { dir: string; clones: Record<strin
     { id: "T3", title: "Handoff state machine", lane: "core", depends_on: ["T2"], lease: ["backend/state/**"], fake: w("T3", "backend/state/machine.ts", 8000) },
     { id: "F1", title: "App shell and routing", lane: "frontend", depends_on: ["T1"], lease: ["frontend/shell/**"], fake: w("F1", "frontend/shell/App.tsx", 7000) },
     { id: "F2", title: "Create screen on fixtures", lane: "frontend", depends_on: ["F1"], lease: ["frontend/create/**"], fake: w("F2", "frontend/create/Create.tsx", 10000, { review: "changes-once", ask: { to: "lane:core", question: "Is owner_id nullable on follow-ups?" } }) },
-    { id: "F3", title: "Receive screen on fixtures", lane: "frontend", depends_on: ["F1"], lease: ["frontend/receive/**"], fake: w("F3", "frontend/receive/Receive.tsx", 9000) },
+    { id: "F3", title: "Receive screen on fixtures", lane: "frontend", depends_on: ["F1"], priority: "nice", lease: ["frontend/receive/**"], fake: w("F3", "frontend/receive/Receive.tsx", 9000) },
     { id: "V1", title: "Speech-to-text service", lane: "voice", depends_on: ["T1"], lease: ["backend/stt/**"], fake: w("V1", "backend/stt/stt.ts", 8000, { fail: "first" }) },
     { id: "V2", title: "Statement ingest route", lane: "voice", depends_on: ["V1", "T2"], lease: ["backend/ingest/**"], fake: w("V2", "backend/ingest/route.ts", 7000, { note: { to: "lane:frontend", text: "POST /statements now accepts multipart `file`" } }) },
     { id: "A1", title: "LLM client with schema validation", lane: "ai", depends_on: ["T1"], lease: ["backend/llm/**"], fake: w("A1", "backend/llm/client.ts", 7000) },
     { id: "A2", title: "Extraction prompt + quote check", lane: "ai", depends_on: ["A1"], lease: ["backend/extract/**"], fake: w("A2", "backend/extract/extract.ts", 9000, { assume: "Quotes must be 3-30 words, verbatim" }) },
     { id: "A3", title: "Clarification question phrasing", lane: "ai", depends_on: ["A2"], lease: ["backend/clarify/**"], acceptance: ["false"], fake: w("A3", "backend/clarify/phrase.ts", 5000) },
-    { id: "A4", title: "Briefing generator", lane: "ai", depends_on: ["A3"], lease: ["backend/briefing/**"], fake: w("A4", "backend/briefing/brief.ts", 5000) },
+    { id: "A4", title: "Briefing generator", lane: "ai", depends_on: ["A3"], priority: "nice", lease: ["backend/briefing/**"], fake: w("A4", "backend/briefing/brief.ts", 5000) },
     { id: "I1", title: "End-to-end demo test", lane: "core", depends_on: ["T3", "F2", "F3", "V2", "A2"], lease: ["tests/**"], fake: w("I1", "tests/demo.test.ts", 6000) },
   ];
   const night = {
@@ -37,7 +37,10 @@ export function createPractice(dir: string): { dir: string; clones: Record<strin
     board: { kind: "file", path: "../board.jsonl" }, nodes,
     authorize: { board_posts: true, merge_to_night_branch: true, work_stealing: true, contract_changes: true, decide_with_assumptions: true },
     check: "test -f README.md", gate: { command: "test -f README.md", every: 2 },
-    concurrency: 2, adapter: "fake", poll_seconds: 2,
+    concurrency: 2, adapter: "fake", poll_seconds: 2, status_every_minutes: 0.25,
+    // A pretend submission deadline tomorrow morning, so the deadline line shows up.
+    deadline: (() => { const d = new Date(Date.now() + 86_400_000); const p = (n: number) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T10:00`; })(),
+    stop_before_minutes: 120,
     limits: { task_minutes: 5, stuck_minutes: 2, stale_claim_minutes: 1, heartbeat_seconds: 5, command_timeout_seconds: 60, retries: 1 },
     steal: { idle_seconds: 5 },
   };

@@ -7,13 +7,14 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import YAML from "yaml";
-import { NightDaemon, makeBoard } from "./daemon.js";
+import { NightDaemon, makeBoard, latestNight } from "./daemon.js";
 import { NightConfig, TaskFile, validateTasks, paths, loadNight, nightName, Task } from "./config.js";
 import { preflight } from "./preflight.js";
 import { buildReport, openMorningPr } from "./report.js";
 import { plan } from "./planner.js";
 import { Setup, loadSetup, saveSetup, adoptPlannerChecks } from "./setup.js";
 import { autofill } from "./autofill.js";
+import { draftSubmission, commitSubmission } from "./submission.js";
 import { teammatePrompt, writeTeammatePrompts } from "./onboarding.js";
 import { loadTasks } from "./config.js";
 import { createPractice } from "./practice.js";
@@ -112,12 +113,23 @@ export function serve(o: ServeOpts) {
       return null;
     }
   };
+  // Which night the app shows: tonight in the evening, last night during the day.
+  let nightCache: { key: string; night: string; at: number } | null = null;
+  const currentNight = async (): Promise<string | undefined> => {
+    if (live) return live.night;
+    if (!root || !hasNight()) return undefined;
+    if (nightCache && nightCache.key === root && Date.now() - nightCache.at < 60_000) return nightCache.night;
+    const night = await latestNight(root, loadNight(root)).catch(() => nightName(loadNight(root!)));
+    if (nightCache?.night !== night) observer = undefined;
+    nightCache = { key: root, night, at: Date.now() };
+    return night;
+  };
   const getObserver = (): NightDaemon | null => {
     if (live) return live;
     const n = myNode();
     if (!root || !n || !hasNight()) return null;
     try {
-      observer ??= new NightDaemon({ root, node: n, exitWhenDone: false });
+      observer ??= new NightDaemon({ root, node: n, exitWhenDone: false, night: nightCache?.key === root ? nightCache.night : undefined });
       return observer;
     } catch {
       return null;
@@ -141,15 +153,15 @@ export function serve(o: ServeOpts) {
     const n = myNode()!;
     const me = cfg.nodes.find((x) => x.id === n)!;
     const board = makeBoard(cfg, root!, join(paths(root!).local, n, "server-board-cursor"));
-    await board.post(humanLine(me.name, text), { v: 1, from: n, to: "*", type, body, at: Date.now(), night: nightName(cfg) });
+    await board.post(humanLine(me.name, text), { v: 1, from: n, to: "*", type, body, at: Date.now(), night: (await currentNight()) ?? nightName(cfg) });
     boardCache.at = 0;
   };
-  const startNode = (): number => {
+  const startNode = (day = false): number => {
     const n = myNode()!;
     const dir = join(paths(root!).local, n);
     mkdirSync(dir, { recursive: true });
     const logFd = openSync(join(dir, "daemon.log"), "a");
-    const child = spawn(process.execPath, [LAUNCHER, "start", "--node", n, "--no-dashboard"], {
+    const child = spawn(process.execPath, [LAUNCHER, "start", "--node", n, "--no-dashboard", ...(day ? ["--day", "--skip-preflight"] : [])], {
       cwd: root!,
       detached: true,
       windowsHide: true,
@@ -509,8 +521,8 @@ export function serve(o: ServeOpts) {
         need(root && myNode(), "Pick which teammate you are first.");
         if (live || daemonPid()) return json(res, 409, { error: "Already running on this computer." });
         const b = await readBody(req);
-        if (b.everyone) await postEnv("go", "started the night for everyone.").catch(() => {});
-        return json(res, 200, { ok: true, pid: startNode() });
+        if (b.everyone) await postEnv("go", b.day ? "started a day shift for everyone." : "started the night for everyone.").catch(() => {});
+        return json(res, 200, { ok: true, pid: startNode(!!b.day) });
       }
       if (route === "POST /api/stop") {
         need(root && myNode(), "No project open.");
@@ -525,12 +537,13 @@ export function serve(o: ServeOpts) {
 
       // ---------- tonight & morning ----------
       if (route === "GET /api/snapshot") {
+        await currentNight();
         const dm = getObserver();
         need(dm, "Finish the setup first.");
         if (!live) await dm!.refreshStates().catch(() => {});
         const msgs = await boardMsgs();
         if (!live) for (const m of msgs) dm!.ingest(m, true);
-        const n = nightName(dm!.cfg);
+        const n = dm!.night;
         return json(res, 200, {
           ...dm!.snapshot(),
           live: !!live,
@@ -546,14 +559,60 @@ export function serve(o: ServeOpts) {
         req.on("close", () => sse.delete(res));
         return;
       }
+      if (route === "POST /api/reserve") {
+        // Day shift: folders the humans are working on. Agents treat them as taken.
+        need(root && myNode(), "No project open.");
+        const b = await readBody(req);
+        const globs = (Array.isArray(b.globs) ? b.globs : []).map((g: unknown) => String(g).trim()).filter(Boolean).slice(0, 30);
+        await postEnv("reserve", globs.length ? `is working on ${globs.join(", ")} (agents keep out).` : "is done with their reserved folders.", { globs });
+        return json(res, 200, { ok: true, globs });
+      }
+      if (route === "POST /api/retry") {
+        // Morning: retry a set-aside task with a human hint, as a new task <id>-rN.
+        need(root && myNode(), "No project open.");
+        await currentNight();
+        const dm = getObserver();
+        need(dm, "Finish the setup first.");
+        const b = await readBody(req);
+        await dm!.refreshStates();
+        const orig = dm!.tasks.find((t) => t.id === String(b.task));
+        need(orig, "No such task.");
+        const st = dm!.states.get(orig!.id)?.state;
+        need(st?.status === "parked", "Only set-aside tasks can be retried.");
+        const base = orig!.retry_of ?? orig!.id;
+        let n = 2;
+        while (dm!.tasks.some((t) => t.id === `${base}-r${n}`)) n++;
+        const id = `${base}-r${n}`;
+        const hint = String(b.hint ?? "").trim();
+        const kept = `ns/${dm!.night}/${orig!.id}-a${st!.attempt}`;
+        const brief = `${orig!.brief || orig!.title}\n\n## This is a retry\nThe previous attempt (${orig!.id}) was set aside: ${st!.note ?? "no reason recorded"}\nIts work is kept on the branch \`${kept}\` if it helps (read it with \`git show ${kept}:<path>\` or \`git diff HEAD ${kept}\`).${hint ? `\n\n## Hint from the team\n${hint}` : ""}`;
+        const { fake, ...rest } = orig!;
+        await dm!.addDynamicTask({ ...rest, id, retry_of: base, brief, ...(fake ? { fake: { ...fake, fail: false, review: "approve", stuck: false } } : {}) }, `Retrying ${orig!.id} as ${id}${hint ? " with a hint from the team" : ""}.`);
+        return json(res, 200, { ok: true, id });
+      }
+      if (route === "POST /api/submission") {
+        need(root && myNode(), "No project open.");
+        const night = await currentNight();
+        need(night, "Finish the setup first.");
+        return json(res, 200, await draftSubmission(root!, myNode()!, night!));
+      }
+      if (route === "POST /api/submission/commit") {
+        need(root && myNode(), "No project open.");
+        const b = await readBody(req);
+        need(typeof b.markdown === "string" && b.markdown.trim(), "Nothing to add.");
+        const night = await currentNight();
+        const sha = await commitSubmission(root!, myNode()!, night!, b.markdown);
+        return json(res, 200, { ok: true, sha });
+      }
       if (route === "GET /api/report") {
         need(root && myNode(), "No project open.");
-        return json(res, 200, await buildReport(root!, myNode()!));
+        return json(res, 200, await buildReport(root!, myNode()!, await currentNight()));
       }
       if (route === "POST /api/report/pr") {
         need(root && myNode(), "No project open.");
-        const r = await buildReport(root!, myNode()!);
-        return json(res, 200, { url: await openMorningPr(root!, r) });
+        const night = await currentNight();
+        const r = await buildReport(root!, myNode()!, night);
+        return json(res, 200, { url: await openMorningPr(root!, r, night) });
       }
 
       // ---------- static app ----------

@@ -48,6 +48,8 @@ export const Setup = z.object({
       stealing: z.boolean().default(true),
       contractsOwner: z.string().default(""), // member id who applies contract changes
       check: z.string().default(""), // how we know the build works; planner suggests one if empty
+      alerts: z.boolean().default(true), // @mention the lead on GitHub for real problems
+      stopBefore: z.number().min(0).default(120), // minutes before the deadline to stop starting new work
     })
     .prefault({}),
 });
@@ -137,6 +139,9 @@ export function nightYaml(s: Setup, root: string, existing?: Partial<NightConfig
     contracts: existing?.contracts ?? [],
     contract_lane: owner ? rolesOf(owner)[0] : undefined,
     auth: existing?.auth ?? "subscription",
+    ...(s.event.deadline ? { deadline: s.event.deadline } : {}),
+    stop_before_minutes: s.rules.stopBefore,
+    alerts: { enabled: s.rules.alerts, ...(s.team[0]?.github ? { mention: s.team[0].github } : {}), finished: true },
     adapter: existing?.adapter ?? "claude",
   };
 }

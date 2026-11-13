@@ -58,6 +58,7 @@ export function parseResetTime(text: string, now = Date.now()): number | undefin
 }
 
 const LIMIT_RE = /usage limit|rate limit|hit your limit|quota exceeded|too many requests/i;
+const AUTH_RE = /not logged in|unauthorized|\b401\b|please (re-?)?log ?in|codex login|token (has )?expired/i;
 
 export class CodexAdapter implements Adapter {
   name = "codex";
@@ -199,6 +200,7 @@ export class CodexAdapter implements Adapter {
     if (existsSync(lastFile)) lastText = readFileSync(lastFile, "utf8").trim() || lastText;
 
     if (limited) return { ok: false, reason: "usage_limit", resumeAt, text: failure, costUsd: 0, sessionId, denials: 0 };
+    if (code !== 0 && AUTH_RE.test(failure)) return { ok: false, reason: "auth", text: failure, costUsd: 0, sessionId, denials: 0 };
     const ok = code === 0 && !failure;
     return { ok, reason: ok ? undefined : "error", text: ok ? lastText : failure, costUsd: 0, sessionId, denials: 0 };
   }

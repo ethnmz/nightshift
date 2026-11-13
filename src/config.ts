@@ -71,6 +71,19 @@ export const NightConfig = z.object({
   auth: z.enum(["subscription", "api_key"]).default("subscription"),
   // On a usage-limit hit: release the task to other nodes and pause this node until the limit resets.
   usage_limit_pause_minutes: z.number().positive().default(30), // used when no reset time is reported
+  // Submission deadline (local ISO, e.g. 2027-11-14T10:00). No new tasks start after
+  // deadline − stop_before_minutes; work in progress still finishes.
+  deadline: z.string().optional(),
+  stop_before_minutes: z.number().min(0).default(120),
+  // Alerts reach the lead through a GitHub @mention on the team board (GitHub's own phone notifications).
+  alerts: z
+    .object({
+      enabled: z.boolean().default(true),
+      mention: z.string().optional(), // GitHub login to @mention
+      finished: z.boolean().default(true), // also notify when the night is finished
+    })
+    .prefault({}),
+  status_every_minutes: z.number().positive().default(10), // live progress comment refresh
   dashboard_port: z.number().int().default(4545),
 });
 export type NightConfig = z.infer<typeof NightConfig>;
@@ -85,6 +98,9 @@ export const Task = z.object({
   depends_on: z.array(z.string()).default([]),
   contracts: z.array(z.string()).default([]),
   acceptance: z.array(z.string()).default([]),
+  // must = demo-critical (built first); nice = only if there is time and usage left.
+  priority: z.enum(["must", "nice"]).default("must"),
+  retry_of: z.string().optional(), // a morning retry of a parked task
   max_turns: z.number().int().positive().optional(),
   minutes: z.number().positive().optional(),
   // Only read by the fake adapter (tests and rehearsals).

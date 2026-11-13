@@ -20,6 +20,7 @@ import { ClaudeAdapter } from "./agents/claude.js";
 import { FakeAdapter } from "./agents/fake.js";
 import { prompt, bullets } from "./prompts.js";
 import { sh, tail, run, agentGuardEnv } from "./exec.js";
+import { resolveCli } from "./platform.js";
 import { Mutex, sleep } from "./mutex.js";
 
 export interface RunningInfo {
@@ -52,6 +53,29 @@ export interface DaemonOpts {
   loopMs?: number;
   /** Exit when the night is finished (default true). The dashboard server keeps running separately. */
   exitWhenDone?: boolean;
+  /** Day shift: the same night continues while people work (retries, leftovers). */
+  day?: boolean;
+  /** Which night to join (default: tonight's name). Day shifts and the morning use the latest night. */
+  night?: string;
+}
+
+/**
+ * The night to show or continue. In the evening and overnight that is tonight; during the day
+ * (or for a day shift) it is the most recent night branch that exists, so the morning shows
+ * last night's results instead of an empty new night.
+ */
+export async function latestNight(root: string, cfg: NightConfig, mode: "auto" | "latest" = "auto", now = new Date()): Promise<string> {
+  const tonight = nightName(cfg, now);
+  if (cfg.night !== "auto") return cfg.night;
+  const daytime = now.getHours() >= 6 && now.getHours() < 18;
+  if (mode === "auto" && !daytime) return tonight;
+  const r = await run("git", ["ls-remote", "--heads", cfg.remote, "night/*"], { cwd: root, timeoutMs: 30_000 });
+  const names = r.stdout
+    .split("\n")
+    .map((l) => /refs\/heads\/night\/(\d{4}-\d{2}-\d{2})$/.exec(l.trim())?.[1])
+    .filter((x): x is string => !!x && x <= tonight)
+    .sort();
+  return names[names.length - 1] ?? tonight;
 }
 
 export class NightDaemon {
@@ -83,6 +107,17 @@ export class NightDaemon {
   usageByNode = new Map<string, UsageInfo>();
   /** Set when the subscription's usage limit is hit: no new tasks until then. */
   pausedUntil = 0;
+  /** The agent's login stopped working; paused until a probe sees it fixed. */
+  authLost = false;
+  day = false;
+  /** Day shift: path globs humans are working on, per teammate (latest wins). */
+  reserves = new Map<string, string[]>();
+  /** Last time each alert kind was raised by anyone on the team (from the board). */
+  alertsSeen = new Map<string, number>();
+  /** Latest node_up / node_down per teammate. */
+  life = new Map<string, "node_up" | "node_down">();
+  private gateFails = 0;
+  deadlineHit = false;
   private seenMsgs = new Set<string>();
   private laneBacklog = new Map<string, string[]>();
   private idleSince = Date.now();
@@ -96,7 +131,7 @@ export class NightDaemon {
     this.root = o.root;
     this.cfg = loadNight(o.root);
     this.me = findNode(this.cfg, o.node);
-    this.night = nightName(this.cfg);
+    this.night = o.night ?? nightName(this.cfg);
     this.branch = nightBranch(this.night);
     const p = paths(o.root);
     this.local = join(p.local, this.me.id);
@@ -110,6 +145,7 @@ export class NightDaemon {
     this.baseTasks = loadTasks(o.root);
     this.loopMs = o.loopMs ?? 3000;
     this.exitWhenDone = o.exitWhenDone ?? true;
+    this.day = !!o.day;
   }
 
   // ---------- shared helpers ----------
@@ -187,6 +223,13 @@ export class NightDaemon {
   /** Task ids whose squash commit is on the night branch (the ground truth, even if a state write was lost). */
   mergedOnNight = new Set<string>();
 
+  /** No new claims at or after this time (deadline − stop_before), if a deadline is set. */
+  cutoffAt(): number | undefined {
+    if (!this.cfg.deadline) return undefined;
+    const t = Date.parse(this.cfg.deadline);
+    return isNaN(t) ? undefined : t - this.cfg.stop_before_minutes * 60_000;
+  }
+
   readinessNow(): Map<string, Readiness> {
     return readiness(this.tasks, this.statesWithMerged(), (s) => this.claims.isStale(s.state, this.staleMs()));
   }
@@ -223,17 +266,22 @@ export class NightDaemon {
     this.ledger.add("node_start", { data: { night: this.night, adapter: this.adapter.name, board: this.board.describe() } });
     await this.ensureNightBranch();
     await this.replayBoard();
-    await this.post("node_up", `${this.me.name}'s node is up for night ${this.night} (lanes: ${this.me.lanes.join(", ")}).`, {
+    await this.post("node_up", `${this.me.name}'s node is up for ${this.day ? "a day shift on" : "night"} ${this.night} (lanes: ${this.me.lanes.join(", ")}).`, {
       body: { lanes: this.me.lanes, concurrency: this.cfg.concurrency },
     });
     const boardLoop = this.boardLoop();
+    const statusLoop = this.statusLoop();
     try {
       await this.schedLoop();
     } finally {
       this.stop(this.stopReason || "night finished");
       await boardLoop.catch(() => {});
+      await statusLoop.catch(() => {});
       const s = this.summary();
+      if (this.finished && this.cfg.alerts.finished) await this.alert("finished", `The night is finished: ${this.teamSummary()}. Morning report is ready in Nightshift.`);
       await this.post("node_down", `${this.me.name}'s node is done: ${s}`, { body: { merges: this.merges, reason: this.stopReason } });
+      this.life.set(this.me.id, "node_down");
+      await this.writeStatus(true).catch(() => {});
     }
   }
 
@@ -266,7 +314,25 @@ export class NightDaemon {
       if (overBudget && !this.stopReason) {
         this.stopReason = "budget reached";
         await this.post("budget", `Budget reached (node $${this.spentNode.toFixed(2)}, team $${this.spentTeam.toFixed(2)}). No new tasks from this node.`);
+        await this.alert("budget", `${this.me.name}'s computer reached its usage cap and stopped taking new tasks.`);
       }
+      const cutoff = this.cutoffAt();
+      if (cutoff !== undefined && Date.now() >= cutoff && !this.deadlineHit) {
+        this.deadlineHit = true;
+        this.stopReason = "deadline";
+        await this.post("note", `Close to the submission deadline: no new tasks start now. Work in progress finishes.`, { body: { text: "deadline cutoff" } });
+      }
+      if (this.deadlineHit && this.running.size === 0) break;
+      if (this.authLost && !this.paused()) {
+        // Paused for a lost login: check cheaply whether someone signed in again.
+        if (await this.authProbe()) {
+          this.authLost = false;
+          this.usage = undefined;
+          await this.post("note", `${this.me.name}'s ${this.agentLabel()} login works again. Back to work.`, { body: { text: "login restored" } });
+        } else this.pausedUntil = Date.now() + 30 * 60_000;
+      }
+      // Demo-critical work only when usage is nearly spent or the cutoff is near.
+      const mustOnly = this.spentNode >= 0.8 * this.cfg.budget.node_usd || (cutoff !== undefined && Date.now() >= cutoff - 3 * 3600_000);
       while (!overBudget && !this.paused() && !this.finished && this.running.size < this.cfg.concurrency) {
         const pick = pickNext({
           tasks: this.tasks,
@@ -276,6 +342,9 @@ export class NightDaemon {
           cfg: this.cfg,
           localRunning: new Set(this.running.keys()),
           idleMs: this.running.size === 0 ? Date.now() - this.idleSince : 0,
+          reserves: [...this.reserves.values()].filter((g) => g.length),
+          mustOnly,
+          cutoffAt: cutoff,
         });
         if (!pick) break;
         const claimed = await this.claim(pick);
@@ -324,6 +393,10 @@ export class NightDaemon {
     if (env.night && env.night !== this.night) return;
     if (env.body.usage && typeof env.body.usage === "object") this.usageByNode.set(env.from, env.body.usage as UsageInfo);
     if (typeof env.body.spent === "number") this.spentByNode.set(env.from, Math.max(this.spentByNode.get(env.from) ?? 0, env.body.spent as number));
+    if (env.type === "node_up" || env.type === "node_down") this.life.set(env.from, env.type);
+    if (env.type === "alert" && typeof env.body.kind === "string") this.alertsSeen.set(env.body.kind, Math.max(this.alertsSeen.get(env.body.kind) ?? 0, env.at));
+    if (env.type === "reserve") this.reserves.set(env.from, Array.isArray(env.body.globs) ? (env.body.globs as string[]) : []);
+    if (!replay && env.type === "alert" && env.body.needs_relay) void this.relayAlert(env);
     if (replay) return;
     this.ledger.add("board", { task: env.task, data: { from: env.from, to: env.to, type: env.type, body: env.body } });
 
@@ -419,6 +492,7 @@ export class NightDaemon {
       depends_on: [],
       contracts: this.cfg.contracts,
       acceptance: [],
+      priority: "must",
     };
     await this.addDynamicTask(t, `Queued contract change ${id} for ${env.body.file}`);
   }
@@ -576,6 +650,10 @@ export class NightDaemon {
     if (!reason && abort.signal.aborted && !res.ok) res.reason = "aborted";
     this.addSpend(res.costUsd);
     if (o.running) o.running.cost += res.costUsd;
+    if (res.reason === "auth") {
+      this.pauseForAuth(res.text);
+      throw new UsageLimitHit("login");
+    }
     if (res.reason === "usage_limit" || (!res.ok && this.paused())) {
       this.pauseForUsage(res.resumeAt);
       throw new UsageLimitHit();
@@ -619,6 +697,10 @@ export class NightDaemon {
     this.laneBacklog.delete(t.lane);
     this.running.set(t.id, running);
     this.ledger.add("task_claimed", { task: t.id, data: { stolen: pick.stolen, takeover: prev?.state.node } });
+    if (prev && prev.state.status === "claimed" && prev.state.node !== this.me.id) {
+      const who = this.cfg.nodes.find((n) => n.id === prev.state.node)?.name ?? prev.state.node;
+      void this.alert(`silent-${prev.state.node}`, `${who}'s computer went silent (asleep, offline or crashed). ${this.me.name}'s computer took over ${t.id}.`);
+    }
     void this.post(
       "task_claimed",
       `Claimed ${t.id} (${t.title})${pick.stolen ? ` from lane ${t.lane}` : ""}${prev ? `, taking over from ${prev.state.node}` : ""}.`,
@@ -836,7 +918,8 @@ export class NightDaemon {
       await this.maybeGate();
     } catch (e) {
       if (e instanceof UsageLimitHit) {
-        if (!r.lost && !this.stopped) await this.release(t, r, "usage limit reached on this teammate's plan").catch(() => {});
+        const why = this.authLost ? `${this.agentLabel()} login stopped working on this computer` : "usage limit reached on this teammate's plan";
+        if (!r.lost && !this.stopped) await this.release(t, r, why).catch(() => {});
         return;
       }
       this.ledger.add("error", { task: t.id, data: { where: "execute", error: String(e) } });
@@ -944,9 +1027,11 @@ export class NightDaemon {
     await this.removeWorktree(wt).catch(() => {});
     this.ledger.add("gate", { data: { head, code: res.code } });
     if (res.code === 0) {
+      this.gateFails = 0;
       await this.post("gate_passed", `Integration gate passed at ${head.slice(0, 8)}.`, { body: { head } });
       return;
     }
+    if (++this.gateFails >= 2) await this.alert("gate", `The full check has failed ${this.gateFails} times in a row on the night branch. A fixer task is queued; check the board if it keeps failing.`);
     await this.post("gate_failed", `Integration gate FAILED at ${head.slice(0, 8)}. Queuing a fixer.`, { body: { head, text: tail(res.stdout + res.stderr, 2000) } });
     const openFix = this.tasks.some((t) => t.id.startsWith("FIX-") && !["done", "parked"].includes(this.states.get(t.id)?.state.status ?? ""));
     if (openFix) return;
@@ -963,6 +1048,7 @@ export class NightDaemon {
         depends_on: [],
         contracts: this.cfg.contracts,
         acceptance: [gate.command],
+        priority: "must",
       },
       `Gate failed; queued ${id}. It reserves the whole tree, so new work waits until it lands.`,
     );
@@ -992,6 +1078,146 @@ export class NightDaemon {
       body: { text: "usage limit", paused_until: target },
     });
     for (const r of this.running.values()) r.abort.abort();
+    this.usageByNode.set(this.me.id, this.usage);
+    const all = this.cfg.nodes.every((n) => this.usageByNode.get(n.id)?.status === "limited");
+    if (all && this.cfg.nodes.length > 1) void this.alert("all-paused", "Every computer on the team has hit its plan's usage limit. Work resumes on its own as limits reset.");
+  }
+
+  agentLabel() {
+    return this.agent === "codex" ? "Codex" : "Claude Code";
+  }
+
+  /** The agent's login stopped working: hand work back, pause, alert, and probe every 30 minutes. */
+  pauseForAuth(detail: string) {
+    if (this.authLost) return;
+    this.authLost = true;
+    this.pausedUntil = Date.now() + 30 * 60_000;
+    this.usage = { ...(this.usage ?? {}), status: "limited" };
+    this.ledger.add("paused", { data: { reason: "auth", detail: detail.slice(0, 300) } });
+    void this.post("note", `${this.me.name}'s ${this.agentLabel()} login stopped working. Releasing running tasks to other computers; checking again every 30 minutes.`, { body: { text: "login lost" } });
+    void this.alert(`login-${this.me.id}`, `${this.me.name}'s ${this.agentLabel()} login stopped working, so that computer paused and handed its tasks to the others. Fix: on that computer run ${this.agent === "codex" ? "`codex login`" : "`claude` and type /login"}. It resumes by itself within 30 minutes.`);
+    for (const r of this.running.values()) r.abort.abort();
+  }
+
+  /** Cheap login check without using the plan: the CLI's own status command. */
+  async authProbe(): Promise<boolean> {
+    if (this.agent === "fake") return !this.cfg.nodes.length || true;
+    const [bin, pre] = resolveCli(this.agent);
+    const r = await run(bin, [...pre, ...(this.agent === "codex" ? ["login", "status"] : ["auth", "status"])], { timeoutMs: 30_000 });
+    if (r.code !== 0) return false;
+    if (this.agent === "codex") return !/not logged in/i.test(r.stdout + r.stderr);
+    try {
+      return !!JSON.parse(r.stdout).loggedIn;
+    } catch {
+      return false;
+    }
+  }
+
+  // ---------- alerts (GitHub @mention → the lead's phone) ----------
+
+  /**
+   * Raise an alert at most once per kind per hour, team-wide. GitHub does not notify people
+   * about their own posts, so if this computer belongs to the person being mentioned, another
+   * teammate's computer relays it.
+   */
+  async alert(kind: string, text: string) {
+    const a = this.cfg.alerts;
+    if (!a.enabled || !a.mention) return;
+    const last = this.alertsSeen.get(kind) ?? 0;
+    if (Date.now() - last < 60 * 60_000) return;
+    this.alertsSeen.set(kind, Date.now());
+    const self = (this.me.login ?? "").toLowerCase() === a.mention.toLowerCase();
+    const relayer = this.cfg.nodes.find((n) => (n.login ?? "").toLowerCase() !== a.mention!.toLowerCase());
+    const needsRelay = self && !!relayer;
+    const line = needsRelay ? `⚠ ${text}` : `@${a.mention} ⚠ ${text}`;
+    this.ledger.add("alert", { data: { kind, text } });
+    await this.post("alert", line, { body: { kind, text, needs_relay: needsRelay, mention: a.mention } });
+  }
+
+  private async relayAlert(env: Envelope) {
+    const a = this.cfg.alerts;
+    if (!a.mention) return;
+    const relayer = this.cfg.nodes.find((n) => (n.login ?? "").toLowerCase() !== a.mention!.toLowerCase());
+    if (relayer?.id !== this.me.id) return;
+    await this.post("note", `@${a.mention} ⚠ ${String(env.body.text ?? "")}`, { body: { text: `relayed alert: ${String(env.body.kind ?? "")}` } });
+  }
+
+  // ---------- live progress note on the board ----------
+
+  /** The first teammate (night.yaml order) whose node is up writes the note; others take over if it goes stale. */
+  private amStatusWriter(): boolean {
+    const first = this.cfg.nodes.find((n) => n.id === this.me.id ? !this.stopped || this.finished : this.life.get(n.id) === "node_up");
+    return first?.id === this.me.id;
+  }
+
+  private async statusLoop() {
+    const every = this.cfg.status_every_minutes * 60_000;
+    let next = Date.now() + Math.min(every, 30_000);
+    while (!this.stopped) {
+      await sleep(Math.min(250, every));
+      if (Date.now() < next) continue;
+      next = Date.now() + every;
+      await this.writeStatus(false).catch((e) => this.ledger.add("error", { data: { where: "status", error: String(e) } }));
+    }
+  }
+
+  async writeStatus(final: boolean) {
+    let mine = this.amStatusWriter();
+    if (!mine && !final) {
+      const at = await this.board.statusUpdatedAt(this.night).catch(() => null);
+      mine = at === null || Date.now() - at > 2.5 * this.cfg.status_every_minutes * 60_000;
+    }
+    if (!mine) return;
+    await this.board.upsertStatus(this.night, this.statusMarkdown());
+  }
+
+  teamSummary(): string {
+    const r = this.readinessNow();
+    const c = (k: Readiness) => [...r.values()].filter((x) => x === k).length;
+    return `${c("done")}/${this.tasks.length} merged, ${c("parked")} set aside`;
+  }
+
+  statusMarkdown(): string {
+    const r = this.readinessNow();
+    const c = (k: Readiness) => [...r.values()].filter((x) => x === k).length;
+    const done = c("done");
+    const total = this.tasks.length || 1;
+    const bar = "█".repeat(Math.round((done / total) * 20)).padEnd(20, "░");
+    const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    const lines = this.cfg.nodes.map((n) => {
+      const working = this.tasks.filter((t) => r.get(t.id) === "running" && this.states.get(t.id)?.state.node === n.id);
+      const stale = this.tasks.some((t) => r.get(t.id) === "stale" && this.states.get(t.id)?.state.node === n.id);
+      const u = n.id === this.me.id ? this.usage : this.usageByNode.get(n.id);
+      const life = this.life.get(n.id);
+      const state =
+        u?.status === "limited"
+          ? `paused${u.resetsAt ? ` until ${time(u.resetsAt)}` : ""}`
+          : stale
+            ? "silent (its tasks are moving to others)"
+            : working.length
+              ? `building ${working.map((t) => `${t.id} ${t.title}`).join(", ")}`
+              : life === "node_down"
+                ? "finished"
+                : life === "node_up"
+                  ? "waiting for work"
+                  : "not started";
+      return `- **${n.name}**: ${state}`;
+    });
+    const parked = this.tasks.filter((t) => r.get(t.id) === "parked");
+    const spent = [...this.spentByNode.values()].reduce((a, b) => a + b, 0);
+    const cutoff = this.cutoffAt();
+    return [
+      `### Nightshift: ${this.day ? "day shift" : "night"} of ${this.night}`,
+      "",
+      `\`${bar}\` **${done} / ${this.tasks.length} merged**${c("running") ? ` · ${c("running")} building` : ""}${parked.length ? ` · ${parked.length} set aside` : ""}`,
+      "",
+      ...lines,
+      ...(parked.length ? ["", `Set aside for the morning: ${parked.map((t) => t.id).join(", ")}`] : []),
+      "",
+      `Last full check: ${this.gateFails ? `failing (${this.gateFails} in a row)` : "passing or not run yet"} · ${this.agent === "fake" ? "practice night (no AI used)" : `estimated usage $${spent.toFixed(2)}${this.cfg.auth === "subscription" ? " (subscriptions, not billed)" : ""}`}${cutoff ? ` · no new tasks after ${time(cutoff)}` : ""}`,
+      "",
+      `_Updated ${time(Date.now())}${final_marker()}_`,
+    ].join("\n");
   }
 
   /** Hand a task back to the team without counting it as a failure. */
@@ -1022,6 +1248,11 @@ export class NightDaemon {
       agent: this.agent,
       auth: this.cfg.auth,
       pausedUntil: this.pausedUntil,
+      authLost: this.authLost,
+      day: this.day,
+      reserves: Object.fromEntries(this.reserves),
+      cutoffAt: this.cutoffAt() ?? null,
+      deadline: this.cfg.deadline ?? null,
       usage: Object.fromEntries(this.usageByNode),
       tasks: this.tasks.map((t) => ({
         id: t.id,
@@ -1077,7 +1308,11 @@ function summarizeInput(input: unknown): unknown {
 export { run };
 
 class UsageLimitHit extends Error {
-  constructor() {
-    super("usage limit");
+  constructor(what = "usage limit") {
+    super(what);
   }
+}
+
+function final_marker(): string {
+  return " by Nightshift. Reply `nightshift stop` to stop every computer.";
 }

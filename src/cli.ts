@@ -13,7 +13,7 @@ import { serve } from "./server.js";
 import { readiness } from "./scheduler.js";
 import { keepAwake, openBrowser } from "./platform.js";
 import { run } from "./exec.js";
-import { makeBoard } from "./daemon.js";
+import { makeBoard, latestNight } from "./daemon.js";
 import { humanLine } from "./board/envelope.js";
 import { resolve as resolvePath } from "node:path";
 
@@ -86,7 +86,8 @@ Evening (everyone awake)
   preflight --node ID [--skip-live]   everything that could block at 3 a.m. fails now
 
 Night (everyone asleep)
-  start --node ID [--wait-for-go] [--no-dashboard] [--no-keep-awake] [--skip-preflight]
+  start --node ID [--wait-for-go] [--day] [--no-dashboard] [--no-keep-awake] [--skip-preflight]
+                               --day: day shift; keep building last night's leftovers and retries
                                --wait-for-go: check now, then wait until the lead starts the night
                                run this computer's node until the night is finished
                                (keeps the computer awake; restarts the node if it crashes)
@@ -234,7 +235,7 @@ Any time
     if (existsSync(join(dir, "STOP"))) rmSync(join(dir, "STOP")); // a stop from an earlier night
     if (!flags["no-keep-awake"] && !flags["no-caffeinate"]) console.log(`Keeping this computer awake (${keepAwake(process.pid)}).`);
     const loader = import.meta.resolve("tsx");
-    const childArgs = ["--import", loader, join(HERE, "cli.ts"), "start", "--child", "--node", id, ...(flags["no-dashboard"] ? ["--no-dashboard"] : [])];
+    const childArgs = ["--import", loader, join(HERE, "cli.ts"), "start", "--child", "--node", id, ...(flags["no-dashboard"] ? ["--no-dashboard"] : []), ...(flags.day ? ["--day"] : [])];
     let stopping = false;
     let child: ReturnType<typeof spawn> | null = null;
     const stop = () => {
@@ -259,9 +260,11 @@ Any time
 
   if (cmd === "start") {
     // The node itself (started by the supervisor above).
-    const d = new NightDaemon({ root: r, node: id });
+    // A day shift continues the most recent night (its branch, tasks and board), not a new one.
+    const night = flags.day ? await latestNight(r, loadNight(r), "latest") : undefined;
+    const d = new NightDaemon({ root: r, node: id, day: !!flags.day, night });
     d.ledger.on("event", (e) => {
-      if (["task_claimed", "task_done", "task_parked", "task_released", "paused", "stopped", "error", "gate"].includes(e.kind)) console.log(`${new Date(e.at).toLocaleTimeString()} ${e.kind} ${e.task ?? ""} ${e.data ? JSON.stringify(e.data).slice(0, 160) : ""}`);
+      if (["task_claimed", "task_done", "task_parked", "task_released", "paused", "stopped", "error", "gate", "alert"].includes(e.kind)) console.log(`${new Date(e.at).toLocaleTimeString()} ${e.kind} ${e.task ?? ""} ${e.data ? JSON.stringify(e.data).slice(0, 160) : ""}`);
     });
     if (!flags["no-dashboard"]) {
       const { port } = serve({ root: r, node: id, daemon: d });
