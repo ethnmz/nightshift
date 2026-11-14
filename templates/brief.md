@@ -1,7 +1,7 @@
 # Event: HackUTD 2027
 
 <!-- Fill in what you know and delete what you don't. Headings can be in any order.
-     Nightshift reads this file and fills in the setup for you. Anything it can't place
+     Relay reads this file and fills in the setup for you. Anything it can't place
      is still given to the planner as-is, so extra notes are welcome. -->
 
 Deadline: 2027-11-09 09:00
@@ -39,7 +39,7 @@ React + TypeScript frontend, FastAPI backend, SQLite. (Leave blank to let the pl
 - Teammate Two | @their-github | Windows | Codex | AI
 - Teammate Three | @their-github | Windows | Claude Code | backend
 
-## Overnight rules
+## Agent rules
 - Agents per computer: 2
 - Usage: normal (light, normal or heavy)
 - Review every change: yes

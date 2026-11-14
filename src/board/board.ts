@@ -14,13 +14,13 @@ export interface Board {
   /** Everything on the board (used once at startup to rebuild state, and by the report). */
   fetchAll(): Promise<BoardMessage[]>;
   describe(): string;
-  /** The night's live progress note, edited in place (one per night). */
-  upsertStatus(night: string, markdown: string): Promise<void>;
+  /** The run's live progress note, edited in place (one per run). */
+  upsertStatus(runId: string, markdown: string): Promise<void>;
   /** When the progress note was last written, or null if there is none yet. */
-  statusUpdatedAt(night: string): Promise<number | null>;
+  statusUpdatedAt(runId: string): Promise<number | null>;
 }
 
-export const statusMarker = (night: string) => `<!-- nightshift-status night=${night} -->`;
+export const statusMarker = (runId: string) => `<!-- relay-status run=${runId} -->`;
 
 function readCursor(path?: string): string | undefined {
   if (!path || !existsSync(path)) return undefined;
@@ -43,14 +43,14 @@ export class FileBoard implements Board {
   describe() {
     return `file ${this.file}`;
   }
-  private statusFile(night: string) {
-    return join(dirname(this.file), `status-${night}.md`);
+  private statusFile(runId: string) {
+    return join(dirname(this.file), `status-${runId}.md`);
   }
-  async upsertStatus(night: string, markdown: string) {
-    writeFileSync(this.statusFile(night), `${statusMarker(night)}\n${markdown}`);
+  async upsertStatus(runId: string, markdown: string) {
+    writeFileSync(this.statusFile(runId), `${statusMarker(runId)}\n${markdown}`);
   }
-  async statusUpdatedAt(night: string) {
-    const f = this.statusFile(night);
+  async statusUpdatedAt(runId: string) {
+    const f = this.statusFile(runId);
     return existsSync(f) ? statSync(f).mtimeMs : null;
   }
   async post(human: string, env: Envelope) {
@@ -89,15 +89,15 @@ export class GitHubIssueBoard implements Board {
   describe() {
     return `github ${this.repo}#${this.issue}`;
   }
-  private async findStatus(night: string): Promise<BoardMessage | undefined> {
+  private async findStatus(runId: string): Promise<BoardMessage | undefined> {
     const all = await this.fetchAll();
-    return all.filter((m) => m.text.startsWith(statusMarker(night))).pop();
+    return all.filter((m) => m.text.startsWith(statusMarker(runId))).pop();
   }
-  async upsertStatus(night: string, markdown: string) {
-    const body = `${statusMarker(night)}\n${markdown}`;
-    const cache = this.cursorPath ? `${this.cursorPath}-status-${night}` : undefined;
+  async upsertStatus(runId: string, markdown: string) {
+    const body = `${statusMarker(runId)}\n${markdown}`;
+    const cache = this.cursorPath ? `${this.cursorPath}-status-${runId}` : undefined;
     let id = cache && existsSync(cache) ? readFileSync(cache, "utf8").trim() : "";
-    if (!id) id = (await this.findStatus(night))?.id ?? "";
+    if (!id) id = (await this.findStatus(runId))?.id ?? "";
     if (id) {
       const r = await run("gh", ["api", "-X", "PATCH", `repos/${this.repo}/issues/comments/${id}`, "--input", "-"], { input: JSON.stringify({ body }), timeoutMs: 30_000 });
       if (r.code === 0) return;
@@ -107,8 +107,8 @@ export class GitHubIssueBoard implements Board {
     if (r.code !== 0) throw new Error("status post failed");
     if (cache) writeCursor(cache, r.stdout.trim());
   }
-  async statusUpdatedAt(night: string) {
-    const m = await this.findStatus(night);
+  async statusUpdatedAt(runId: string) {
+    const m = await this.findStatus(runId);
     return m ? Date.parse(m.updatedAt ?? m.createdAt) : null;
   }
   private endpoint(q = "") {

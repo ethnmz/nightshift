@@ -2,16 +2,18 @@
 import { useState, type ReactNode } from "react";
 import type { Readiness } from "./api";
 
-export function Moon({ className = "" }: { className?: string }) {
+/** Relay mark: two arrows passing work to each other. */
+export function RelayMark({ className = "" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 32 32" className={className} aria-hidden>
-      <path d="M20 4a12 12 0 1 0 8 20A10 10 0 0 1 20 4z" fill="currentColor" />
+    <svg viewBox="0 0 32 32" className={className} aria-hidden fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 12h17l-5-5" />
+      <path d="M26 20H9l5 5" />
     </svg>
   );
 }
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`rounded-md border border-night-700 bg-night-900 p-5 transition-colors duration-300 hover:border-night-600 sm:p-7 ${className}`}>{children}</div>;
+  return <div className={`rounded-md border border-ink-700 bg-ink-900 p-5 transition-colors duration-300 hover:border-ink-600 sm:p-7 ${className}`}>{children}</div>;
 }
 
 export function Button({
@@ -33,7 +35,7 @@ export function Button({
 }) {
   // Pill buttons: cream primary, outlined secondary (dark Retool).
   const k = {
-    primary: "bg-cream text-night-950 hover:bg-white hover:shadow-[0_8px_24px_-10px_rgba(236,235,228,0.55)]",
+    primary: "bg-cream text-ink-950 hover:bg-white hover:shadow-[0_8px_24px_-10px_rgba(236,235,228,0.55)]",
     soft: "border border-cream/30 text-cream hover:border-cream/80 hover:bg-white/[0.06]",
     ghost: "text-slate-300 hover:text-white hover:bg-white/[0.04]",
     danger: "bg-red-500/90 text-white hover:bg-red-500",
@@ -56,7 +58,7 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
   );
 }
 
-const inputCls = "w-full rounded-md border border-night-700 bg-[#0c0c0c] px-3.5 py-2.5 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 transition-[border-color,box-shadow] duration-200 hover:border-night-600 focus:border-copper/70 focus:shadow-[0_0_0_4px_rgba(74,157,104,0.12)]";
+const inputCls = "w-full rounded-md border border-ink-700 bg-[#0c0c0c] px-3.5 py-2.5 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 transition-[border-color,box-shadow] duration-200 hover:border-ink-600 focus:border-copper/70 focus:shadow-[0_0_0_4px_rgba(74,157,104,0.12)]";
 export function Input(p: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...p} className={`${inputCls} ${p.className ?? ""}`} />;
 }
@@ -66,9 +68,9 @@ export function Text(p: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
 
 export function Segmented<T extends string>({ value, options, onChange }: { value: T; options: [T, string][]; onChange: (v: T) => void }) {
   return (
-    <div className="inline-flex rounded-full border border-night-700 bg-[#0c0c0c] p-0.5">
+    <div className="inline-flex rounded-full border border-ink-700 bg-[#0c0c0c] p-0.5">
       {options.map(([v, l]) => (
-        <button key={v} type="button" onClick={() => onChange(v)} className={`rounded-full px-3 py-1 text-xs font-medium transition-all duration-200 ease-out active:scale-95 ${value === v ? "bg-cream text-night-950 shadow-[0_2px_10px_-4px_rgba(236,235,228,0.6)]" : "text-neutral-400 hover:bg-white/[0.05] hover:text-neutral-200"}`}>
+        <button key={v} type="button" onClick={() => onChange(v)} className={`rounded-full px-3 py-1 text-xs font-medium transition-all duration-200 ease-out active:scale-95 ${value === v ? "bg-cream text-ink-950 shadow-[0_2px_10px_-4px_rgba(236,235,228,0.6)]" : "text-neutral-400 hover:bg-white/[0.05] hover:text-neutral-200"}`}>
           {l}
         </button>
       ))}
@@ -79,7 +81,7 @@ export function Segmented<T extends string>({ value, options, onChange }: { valu
 export function Toggle({ on, onChange, label, hint }: { on: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) {
   return (
     <button type="button" role="switch" aria-checked={on} onClick={() => onChange(!on)} className="group flex w-full items-start gap-3 rounded-md p-2 text-left transition-colors duration-200 hover:bg-white/[0.035]">
-      <span className={`mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors duration-300 ${on ? "bg-copper" : "bg-night-700 group-hover:bg-night-600"}`}>
+      <span className={`mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors duration-300 ${on ? "bg-copper" : "bg-ink-700 group-hover:bg-ink-600"}`}>
         <span className={`h-4 w-4 rounded-full bg-cream shadow transition-transform duration-300 [transition-timing-function:cubic-bezier(.34,1.56,.64,1)] ${on ? "translate-x-4" : ""}`} />
       </span>
       <span>
@@ -92,7 +94,7 @@ export function Toggle({ on, onChange, label, hint }: { on: boolean; onChange: (
 
 export function Note({ kind = "info", children }: { kind?: "info" | "ok" | "error" | "warn"; children: ReactNode }) {
   const k = { info: "border-copper text-neutral-200", ok: "border-emerald-400 text-emerald-100", error: "border-red-400 text-red-200", warn: "border-amber-300 text-amber-100" }[kind];
-  return <div className={`fade-in whitespace-pre-wrap rounded-md border-l-2 bg-night-850 px-4 py-3 text-sm ${k}`}>{children}</div>;
+  return <div className={`fade-in whitespace-pre-wrap rounded-md border-l-2 bg-ink-850 px-4 py-3 text-sm ${k}`}>{children}</div>;
 }
 
 export function Copy({ text, label = "Copy" }: { text: string; label?: string }) {
@@ -105,7 +107,7 @@ export function Copy({ text, label = "Copy" }: { text: string; label?: string })
         setDone(true);
         setTimeout(() => setDone(false), 1500);
       }}
-      className={`rounded-full border px-2.5 py-0.5 text-xs transition-all duration-200 active:scale-95 ${done ? "border-copper/70 text-copper" : "border-night-600 text-neutral-300 hover:border-cream/60 hover:text-cream"}`}
+      className={`rounded-full border px-2.5 py-0.5 text-xs transition-all duration-200 active:scale-95 ${done ? "border-copper/70 text-copper" : "border-ink-600 text-neutral-300 hover:border-cream/60 hover:text-cream"}`}
     >
       {done ? "✓ Copied" : label}
     </button>
@@ -114,7 +116,7 @@ export function Copy({ text, label = "Copy" }: { text: string; label?: string })
 
 export function Code({ children }: { children: string }) {
   return (
-    <div className="flex items-start gap-2 rounded-md border border-night-700 bg-[#0c0c0c] p-3">
+    <div className="flex items-start gap-2 rounded-md border border-ink-700 bg-[#0c0c0c] p-3">
       <code className="flex-1 whitespace-pre-wrap break-all font-mono text-xs text-cream">{children}</code>
       <Copy text={children} />
     </div>
@@ -127,7 +129,7 @@ export const STATUS: Record<Readiness, { label: string; dot: string; text: strin
   stale: { label: "moving", dot: "bg-orange-400", text: "text-orange-300" },
   ready: { label: "ready", dot: "bg-sky-300", text: "text-sky-200" },
   waiting: { label: "waiting", dot: "bg-slate-600", text: "text-slate-500" },
-  parked: { label: "for the morning", dot: "bg-amber-400", text: "text-amber-300" },
+  parked: { label: "set aside", dot: "bg-amber-400", text: "text-amber-300" },
   blocked: { label: "blocked", dot: "bg-red-400", text: "text-red-300" },
 };
 
@@ -149,7 +151,7 @@ export function ago(t: number): string {
 
 /** Small square label above a heading, like "Use cases" on the dark Retool site. */
 export function Tag({ children }: { children: ReactNode }) {
-  return <span className="inline-block rounded-sm bg-night-800 px-2 py-0.5 text-[11px] font-medium tracking-wide text-neutral-300">{children}</span>;
+  return <span className="inline-block rounded-sm bg-ink-800 px-2 py-0.5 text-[11px] font-medium tracking-wide text-neutral-300">{children}</span>;
 }
 
 /** Big light headline + muted sub line. */

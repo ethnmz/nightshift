@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { NightDaemon } from "../src/daemon.js";
+import { RelayDaemon } from "../src/daemon.js";
 import { CodexAdapter, parseResetTime } from "../src/agents/codex.js";
 import { childEnv } from "../src/exec.js";
 import { KEY_ENV } from "../src/config.js";
@@ -12,7 +12,7 @@ import { makeTeam, NODES } from "./helpers.js";
 const FAKE_CODEX = join(fileURLToPath(new URL(".", import.meta.url)), "fake-codex.mjs");
 const saved = { ...process.env };
 afterEach(() => {
-  for (const k of ["FAKE_CODEX", "NIGHTSHIFT_CODEX_BIN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"]) {
+  for (const k of ["FAKE_CODEX", "RELAY_CODEX_BIN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"]) {
     if (saved[k] === undefined) delete process.env[k];
     else process.env[k] = saved[k];
   }
@@ -38,7 +38,7 @@ describe("subscription logins", () => {
 
 describe("Codex nodes (stand-in codex binary, same flags and JSONL events)", () => {
   it("builds, uses the mailbox tools, gets reviewed and merged — headless, sandboxed, no API keys", async () => {
-    process.env.NIGHTSHIFT_CODEX_BIN = FAKE_CODEX;
+    process.env.RELAY_CODEX_BIN = FAKE_CODEX;
     process.env.OPENAI_API_KEY = "sk-should-not-reach-codex";
     process.env.ANTHROPIC_API_KEY = "sk-ant-should-not-reach";
     process.env.FAKE_CODEX = JSON.stringify({
@@ -52,16 +52,16 @@ describe("Codex nodes (stand-in codex binary, same flags and JSONL events)", () 
     const team = makeTeam({
       nodes: [{ ...NODES[2], agent: "codex" } as any],
       tasks: [{ id: "AI1", title: "Model wrapper", lane: "ai", lease: ["ai/**"], acceptance: ["test -f ai/model.py"] }],
-      night: { adapter: "codex", auth: "subscription" },
+      config: { adapter: "codex", auth: "subscription" },
     });
-    const d = new NightDaemon({ root: team.clones.akshi, node: "akshi", loopMs: 100 });
+    const d = new RelayDaemon({ root: team.clones.akshi, node: "akshi", loopMs: 100 });
     expect(d.adapter).toBeInstanceOf(CodexAdapter);
     await d.start();
-    const flags = JSON.parse(team.git("show", "night/2026-11-11:ai/flags.json"));
-    expect(flags).toEqual({ approval: true, sandbox: "workspace-write", apiKeys: [], pushurl: "file:///nightshift/agents-cannot-push" });
-    const tree = team.git("ls-tree", "-r", "--name-only", "night/2026-11-11");
+    const flags = JSON.parse(team.git("show", "relay/2026-11-11:ai/flags.json"));
+    expect(flags).toEqual({ approval: true, sandbox: "workspace-write", apiKeys: [], pushurl: "file:///relay/agents-cannot-push" });
+    const tree = team.git("ls-tree", "-r", "--name-only", "relay/2026-11-11");
     expect(tree).toContain("ai/model.py");
-    expect(tree).not.toContain(".nightshift-mail"); // the mailbox never reaches a commit
+    expect(tree).not.toContain(".relay-mail"); // the mailbox never reaches a commit
     const board = readFileSync(team.board, "utf8");
     expect(board).toContain("Use the small model"); // mailbox → record_assumption
     expect(board).toContain('\\"type\\":\\"ask\\"');
@@ -82,21 +82,21 @@ describe("Codex nodes (stand-in codex binary, same flags and JSONL events)", () 
   }, 30_000);
 });
 
-describe("plan usage limits during a night", () => {
+describe("plan usage limits during a run", () => {
   it("a node that hits its limit releases the task, pauses, and another node finishes it", async () => {
     const team = makeTeam({
       nodes: [NODES[0], NODES[3]],
       tasks: [{ id: "BIG", title: "Core task", lane: "core", lease: ["core/**"], fake: { usage_limit: "first", usage_limit_node: "aditri", reset_ms: 120_000, writes: { "core/a.txt": "a" } } }],
     });
     // Aditri's plan runs out first; Ethan's node has nothing in its lane and steals the released task.
-    const aditri = new NightDaemon({ root: team.clones.aditri, node: "aditri", loopMs: 100 });
-    const ethan = new NightDaemon({ root: team.clones.ethan, node: "ethan", loopMs: 100 });
+    const aditri = new RelayDaemon({ root: team.clones.aditri, node: "aditri", loopMs: 100 });
+    const ethan = new RelayDaemon({ root: team.clones.ethan, node: "ethan", loopMs: 100 });
     const pA = aditri.start();
     while (!aditri.paused()) await new Promise((r) => setTimeout(r, 50));
     await ethan.start();
     aditri.stop("test done");
     await pA;
-    expect(team.git("ls-tree", "-r", "--name-only", "night/2026-11-11")).toContain("core/a.txt");
+    expect(team.git("ls-tree", "-r", "--name-only", "relay/2026-11-11")).toContain("core/a.txt");
     const board = readFileSync(team.board, "utf8");
     expect(board).toContain("Released BIG");
     expect(board).toMatch(/hit its usage limit\. Pausing until/);

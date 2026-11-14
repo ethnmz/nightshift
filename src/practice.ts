@@ -1,9 +1,10 @@
-// A practice night: a throwaway team (bare git remote + one clone per teammate + a shared
-// file board) with the fake agent, so anyone can watch a whole night in about two minutes.
+// A practice run: a throwaway team (bare git remote + one clone per teammate + a shared
+// file board) with the fake agent, so anyone can watch a whole run in about two minutes.
 import { mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import YAML from "yaml";
+import { newRunId } from "./config.js";
 
 export function createPractice(dir: string): { dir: string; clones: Record<string, string> } {
   if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
@@ -19,7 +20,7 @@ export function createPractice(dir: string): { dir: string; clones: Record<strin
   const w = (id: string, path: string, ms: number, extra: Record<string, unknown> = {}) => ({ sleep_ms: ms, writes: { [path]: `// ${id}\n` }, ...extra });
   const tasks = [
     { id: "T1", title: "Backend skeleton + test setup", lane: "core", lease: ["backend/core/**"], acceptance: ["test -f backend/core/app.ts"], fake: w("T1", "backend/core/app.ts", 6000) },
-    { id: "T2", title: "Data model and SQLite store", lane: "core", depends_on: ["T1"], lease: ["backend/store/**"], fake: w("T2", "backend/store/db.ts", 9000, { assume: "Use SQLite WAL mode; no migrations tool tonight" }) },
+    { id: "T2", title: "Data model and SQLite store", lane: "core", depends_on: ["T1"], lease: ["backend/store/**"], fake: w("T2", "backend/store/db.ts", 9000, { assume: "Use SQLite WAL mode; no migrations tool for now" }) },
     { id: "T3", title: "Handoff state machine", lane: "core", depends_on: ["T2"], lease: ["backend/state/**"], fake: w("T3", "backend/state/machine.ts", 8000) },
     { id: "F1", title: "App shell and routing", lane: "frontend", depends_on: ["T1"], lease: ["frontend/shell/**"], fake: w("F1", "frontend/shell/App.tsx", 7000) },
     { id: "F2", title: "Create screen on fixtures", lane: "frontend", depends_on: ["F1"], lease: ["frontend/create/**"], fake: w("F2", "frontend/create/Create.tsx", 10000, { review: "changes-once", ask: { to: "lane:core", question: "Is owner_id nullable on follow-ups?" } }) },
@@ -32,13 +33,13 @@ export function createPractice(dir: string): { dir: string; clones: Record<strin
     { id: "A4", title: "Briefing generator", lane: "ai", depends_on: ["A3"], priority: "nice", lease: ["backend/briefing/**"], fake: w("A4", "backend/briefing/brief.ts", 5000) },
     { id: "I1", title: "End-to-end demo test", lane: "core", depends_on: ["T3", "F2", "F3", "V2", "A2"], lease: ["tests/**"], fake: w("I1", "tests/demo.test.ts", 6000) },
   ];
-  const night = {
-    version: 1, project: "shiftsync-rehearsal", night: "auto",
+  const config = {
+    version: 1, project: "shiftsync-rehearsal", run_id: newRunId(),
     board: { kind: "file", path: "../board.jsonl" }, nodes,
-    authorize: { board_posts: true, merge_to_night_branch: true, work_stealing: true, contract_changes: true, decide_with_assumptions: true },
+    authorize: { board_posts: true, merge_to_run_branch: true, work_stealing: true, contract_changes: true, decide_with_assumptions: true },
     check: "test -f README.md", gate: { command: "test -f README.md", every: 2 },
     concurrency: 2, adapter: "fake", poll_seconds: 2, status_every_minutes: 0.25,
-    // A pretend submission deadline tomorrow morning, so the deadline line shows up.
+    // A pretend submission deadline, so the deadline line shows up.
     deadline: (() => { const d = new Date(Date.now() + 86_400_000); const p = (n: number) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T10:00`; })(),
     stop_before_minutes: 120,
     limits: { task_minutes: 5, stuck_minutes: 2, stale_claim_minutes: 1, heartbeat_seconds: 5, command_timeout_seconds: 60, retries: 1 },
@@ -47,20 +48,20 @@ export function createPractice(dir: string): { dir: string; clones: Record<strin
   const remote = join(dir, "remote.git");
   git(dir, "init", "-q", "--bare", "-b", "main", remote);
   const seed = join(dir, "seed");
-  mkdirSync(join(seed, ".nightshift"), { recursive: true });
+  mkdirSync(join(seed, ".relay"), { recursive: true });
   git(seed, "init", "-q", "-b", "main");
   writeFileSync(join(seed, "README.md"), "# ShiftSync rehearsal\n");
-  writeFileSync(join(seed, ".gitignore"), ".nightshift/local/\n");
-  writeFileSync(join(seed, ".nightshift/night.yaml"), YAML.stringify(night));
-  writeFileSync(join(seed, ".nightshift/tasks.yaml"), YAML.stringify({ tasks }));
+  writeFileSync(join(seed, ".gitignore"), ".relay/local/\n");
+  writeFileSync(join(seed, ".relay/relay.yaml"), YAML.stringify(config));
+  writeFileSync(join(seed, ".relay/tasks.yaml"), YAML.stringify({ tasks }));
   const osOf: Record<string, string> = { ethan: "mac", diego: "windows", akshi: "windows", aditri: "windows" };
   writeFileSync(
-    join(seed, ".nightshift/setup.json"),
+    join(seed, ".relay/setup.json"),
     JSON.stringify(
       {
         version: 1,
-        event: { name: "Practice night", track: "A pretend ShiftSync build", deadline: "", links: "" },
-        idea: { pitch: "Watch four teammates' agents build a project overnight, with no AI usage.", problem: "", demo: "", must: "", nice: "", stack: "", rules: "" },
+        event: { name: "Practice run", track: "A pretend ShiftSync build", deadline: "", links: "" },
+        idea: { pitch: "Watch four teammates' agents build a project together, with no AI usage.", problem: "", demo: "", must: "", nice: "", stack: "", rules: "" },
         team: nodes.map((n) => ({ id: n.id, name: n.name, github: "", os: osOf[n.id], agent: n.agent, roles: n.lanes.join(", ") })),
         rules: { perComputer: 2, usageCap: 25, review: true, stealing: true, contractsOwner: "aditri", check: "test -f README.md" },
       },

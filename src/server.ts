@@ -1,16 +1,16 @@
-// Local web app server (localhost only): the onboarding wizard, the live "Tonight" view and the
-// "Morning" report. It works before a project exists (welcome screen) and switches projects.
+// Local web app server (localhost only): the onboarding wizard, the Live view and the Results
+// page. It works before a project exists (welcome screen) and switches projects.
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
-import { existsSync, readFileSync, writeFileSync, mkdirSync, openSync, statSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, openSync, statSync, rmSync } from "node:fs";
 import { join, dirname, extname, resolve, basename } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import YAML from "yaml";
-import { NightDaemon, makeBoard, latestNight } from "./daemon.js";
-import { NightConfig, TaskFile, validateTasks, paths, loadNight, nightName, Task } from "./config.js";
+import { RelayDaemon, makeBoard } from "./daemon.js";
+import { RelayConfig, TaskFile, validateTasks, paths, loadConfig, runName, newRunId, Task } from "./config.js";
 import { preflight } from "./preflight.js";
-import { buildReport, openMorningPr } from "./report.js";
+import { buildReport, openRunPr } from "./report.js";
 import { plan } from "./planner.js";
 import { Setup, loadSetup, saveSetup, adoptPlannerChecks } from "./setup.js";
 import { autofill } from "./autofill.js";
@@ -24,7 +24,7 @@ import { humanLine, type BoardMessage, type Envelope } from "./board/envelope.js
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DIST = join(HERE, "..", "dashboard", "dist");
-const LAUNCHER = join(HERE, "..", "bin", "nightshift.mjs");
+const LAUNCHER = join(HERE, "..", "bin", "relay.mjs");
 const MIME: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json" };
 
 // ---------- per-user settings (recent projects, auto-start) ----------
@@ -62,14 +62,14 @@ export interface ServeOpts {
   root?: string | null;
   node?: string;
   port?: number;
-  /** The live daemon when the server runs inside `nightshift start --child`. */
-  daemon?: NightDaemon;
+  /** The live daemon when the server runs inside `relay start --child`. */
+  daemon?: RelayDaemon;
 }
 
 export function serve(o: ServeOpts) {
   let root: string | null = o.root ?? null;
   const live = o.daemon;
-  let observer: NightDaemon | undefined;
+  let observer: RelayDaemon | undefined;
   let boardCache: { at: number; msgs: BoardMessage[]; key: string } = { at: 0, msgs: [], key: "" };
   const sse = new Set<ServerResponse>();
   const planJob: { running: boolean; log: string[]; ok?: boolean; error?: string } = { running: false, log: [] };
@@ -99,7 +99,7 @@ export function serve(o: ServeOpts) {
     remember(dir);
   };
 
-  const hasNight = () => !!root && existsSync(paths(root).night);
+  const hasRun = () => !!root && existsSync(paths(root).config);
   const daemonPid = (): number | null => {
     const n = myNode();
     if (!root || !n) return null;
@@ -113,23 +113,23 @@ export function serve(o: ServeOpts) {
       return null;
     }
   };
-  // Which night the app shows: tonight in the evening, last night during the day.
-  let nightCache: { key: string; night: string; at: number } | null = null;
-  const currentNight = async (): Promise<string | undefined> => {
-    if (live) return live.night;
-    if (!root || !hasNight()) return undefined;
-    if (nightCache && nightCache.key === root && Date.now() - nightCache.at < 60_000) return nightCache.night;
-    const night = await latestNight(root, loadNight(root)).catch(() => nightName(loadNight(root!)));
-    if (nightCache?.night !== night) observer = undefined;
-    nightCache = { key: root, night, at: Date.now() };
-    return night;
+  // Which run the app shows: the one named in relay.yaml (any time of day).
+  let runCache: { key: string; runId: string; at: number } | null = null;
+  const currentRun = async (): Promise<string | undefined> => {
+    if (live) return live.runId;
+    if (!root || !hasRun()) return undefined;
+    if (runCache && runCache.key === root && Date.now() - runCache.at < 60_000) return runCache.runId;
+    const runId = runName(loadConfig(root));
+    if (runCache?.runId !== runId) observer = undefined;
+    runCache = { key: root, runId, at: Date.now() };
+    return runId;
   };
-  const getObserver = (): NightDaemon | null => {
+  const getObserver = (): RelayDaemon | null => {
     if (live) return live;
     const n = myNode();
-    if (!root || !n || !hasNight()) return null;
+    if (!root || !n || !hasRun()) return null;
     try {
-      observer ??= new NightDaemon({ root, node: n, exitWhenDone: false, night: nightCache?.key === root ? nightCache.night : undefined });
+      observer ??= new RelayDaemon({ root, node: n, exitWhenDone: false, runId: runCache?.key === root ? runCache.runId : undefined });
       return observer;
     } catch {
       return null;
@@ -149,19 +149,22 @@ export function serve(o: ServeOpts) {
     return boardCache.msgs;
   };
   const postEnv = async (type: Envelope["type"], text: string, body: Record<string, unknown> = {}) => {
-    const cfg = loadNight(root!);
+    const cfg = loadConfig(root!);
     const n = myNode()!;
     const me = cfg.nodes.find((x) => x.id === n)!;
     const board = makeBoard(cfg, root!, join(paths(root!).local, n, "server-board-cursor"));
-    await board.post(humanLine(me.name, text), { v: 1, from: n, to: "*", type, body, at: Date.now(), night: (await currentNight()) ?? nightName(cfg) });
+    await board.post(humanLine(me.name, text), { v: 1, from: n, to: "*", type, body, at: Date.now(), runId: (await currentRun()) ?? runName(cfg) });
     boardCache.at = 0;
   };
-  const startNode = (day = false): number => {
+  /** again: restarting a run this computer already checked (skip the slow final check). */
+  const startNode = (again = false): number => {
     const n = myNode()!;
+    const stop = join(paths(root!).local, n, "STOP");
+    if (existsSync(stop)) rmSync(stop);
     const dir = join(paths(root!).local, n);
     mkdirSync(dir, { recursive: true });
     const logFd = openSync(join(dir, "daemon.log"), "a");
-    const child = spawn(process.execPath, [LAUNCHER, "start", "--node", n, "--no-dashboard", ...(day ? ["--day", "--skip-preflight"] : [])], {
+    const child = spawn(process.execPath, [LAUNCHER, "start", "--node", n, "--no-dashboard", ...(again ? ["--skip-preflight"] : [])], {
       cwd: root!,
       detached: true,
       windowsHide: true,
@@ -243,18 +246,18 @@ export function serve(o: ServeOpts) {
     try {
       // ---------- app & projects ----------
       if (route === "GET /api/app") {
-        const cfg = hasNight() ? (() => { try { return loadNight(root!); } catch { return null; } })() : null;
+        const cfg = hasRun() ? (() => { try { return loadConfig(root!); } catch { return null; } })() : null;
         const setup = root ? loadSetup(root) : null;
         const tasks = root && existsSync(paths(root).tasks) ? ((YAML.parse(readFileSync(paths(root).tasks, "utf8"))?.tasks ?? []) as unknown[]).length : 0;
         const head = root ? await run("git", ["rev-parse", "--verify", "-q", "HEAD"], { cwd: root, timeoutMs: 5000 }) : null;
         const dirty = root ? (await run("git", ["status", "--porcelain"], { cwd: root, timeoutMs: 10_000 })).stdout.trim() : "";
         return json(res, 200, {
-          project: root ? { path: root, name: basename(root), hasSetup: existsSync(join(paths(root).dir, "setup.json")), tasks, hasCommits: head?.code === 0, unshared: dirty.split("\n").filter((l) => l.includes(".nightshift") || l.includes("docs/")).length } : null,
+          project: root ? { path: root, name: basename(root), hasSetup: existsSync(join(paths(root).dir, "setup.json")), tasks, hasCommits: head?.code === 0, unshared: dirty.split("\n").filter((l) => l.includes(".relay") || l.includes("docs/")).length } : null,
           recent: settings.recent.filter((d) => existsSync(d)),
           me: myNode(),
           setup,
           board: cfg ? { kind: cfg.board.kind, issue: cfg.board.kind === "github" ? cfg.board.issue ?? null : null, repo: cfg.board.kind === "github" ? cfg.board.repo ?? null : null } : null,
-          night: cfg ? nightName(cfg) : null,
+          runId: cfg ? runName(cfg) : null,
           running: live ? process.pid : daemonPid(),
           live: !!live,
           autoStart: root ? !!settings.autoStart[root] : false,
@@ -322,8 +325,8 @@ export function serve(o: ServeOpts) {
       if (route === "POST /api/practice") {
         const { dir, clones } = createPractice(join(USER_DIR, "practice"));
         for (const [id, c] of Object.entries(clones)) {
-          mkdirSync(join(c, ".nightshift", "local"), { recursive: true });
-          writeFileSync(join(c, ".nightshift", "local", "node"), id);
+          mkdirSync(join(c, ".relay", "local"), { recursive: true });
+          writeFileSync(join(c, ".relay", "local", "node"), id);
         }
         openProject(clones.ethan);
         for (const [id, c] of Object.entries(clones)) {
@@ -364,7 +367,7 @@ export function serve(o: ServeOpts) {
         return json(res, 200, { ok: true });
       }
       if (route === "POST /api/plan") {
-        need(root && hasNight(), "Save the team first.");
+        need(root && hasRun(), "Save the team first.");
         need(!planJob.running, "The planner is already running.");
         const b = await readBody(req);
         Object.assign(planJob, { running: true, log: ["Reading the idea…"], ok: undefined, error: undefined });
@@ -417,34 +420,43 @@ export function serve(o: ServeOpts) {
       }
       if (route === "POST /api/share") {
         // Create the team board (once), commit the plan, push it to the base branch.
-        need(root && hasNight(), "Save the team first.");
+        need(root && hasRun(), "Save the team first.");
         const repo = await ghRepo();
         need(repo, "This folder is not connected to a GitHub repo (no `origin`).");
         const p = paths(root!);
-        const night = YAML.parse(readFileSync(p.night, "utf8"));
+        const doc = YAML.parse(readFileSync(p.config, "utf8"));
         const steps: string[] = [];
-        if (night.board?.kind !== "file" && !night.board?.issue) {
+        if (doc.board?.kind !== "file" && !doc.board?.issue) {
           const setup = loadSetup(root!);
-          const body = `Message board for Nightshift agents${setup.event.name ? ` (${setup.event.name})` : ""}. Agents post structured updates here overnight. Post \`nightshift stop\` to stop every computer.`;
-          const r = await run("gh", ["issue", "create", "--repo", repo!, "--title", "Nightshift team board", "--body", body], { cwd: root!, timeoutMs: 60_000 });
+          const body = `Message board for Relay agents${setup.event.name ? ` (${setup.event.name})` : ""}. Agents post structured updates here while they work. Post \`relay stop\` to stop every computer.`;
+          const r = await run("gh", ["issue", "create", "--repo", repo!, "--title", "Relay team board", "--body", body], { cwd: root!, timeoutMs: 60_000 });
           need(r.code === 0, `Could not create the board issue: ${r.stderr.trim().slice(0, 200)}`);
           const num = Number(/\/issues\/(\d+)/.exec(r.stdout)?.[1]);
           need(num, "Could not read the new issue number.");
-          night.board = { kind: "github", repo, issue: num };
-          writeFileSync(p.night, YAML.stringify(night));
+          doc.board = { kind: "github", repo, issue: num };
+          writeFileSync(p.config, YAML.stringify(doc));
           steps.push(`Created the team board: issue #${num}`);
+          observer = undefined;
+        }
+        // A changed plan is a new run: every computer reads the same id from relay.yaml.
+        const planChanged = (await run("git", ["status", "--porcelain", "--", ".relay/tasks.yaml"], { cwd: root!, timeoutMs: 10_000 })).stdout.trim() !== "";
+        if (planChanged || !doc.run_id || doc.run_id === "auto") {
+          doc.run_id = newRunId();
+          writeFileSync(p.config, YAML.stringify(doc));
+          steps.push(`New run ${doc.run_id}`);
+          runCache = null;
           observer = undefined;
         }
         // One setup megaprompt per teammate, committed with the plan.
         const setupNow = loadSetup(root!);
         if (setupNow.team.length) {
-          const written = writeTeammatePrompts(root!, { setup: setupNow, cfg: loadNight(root!), tasks: safeTasks(root!), repo: repo!, leadName: setupNow.team[0].name });
+          const written = writeTeammatePrompts(root!, { setup: setupNow, cfg: loadConfig(root!), tasks: safeTasks(root!), repo: repo!, leadName: setupNow.team[0].name });
           steps.push(`Wrote ${written.length} teammate setup prompt${written.length === 1 ? "" : "s"}`);
         }
         await run("git", ["add", "-A"], { cwd: root!, timeoutMs: 30_000 });
-        const c = await run("git", ["commit", "-q", "-m", "Nightshift: plan for tonight"], { cwd: root!, timeoutMs: 30_000 });
+        const c = await run("git", ["commit", "-q", "-m", "Relay: plan"], { cwd: root!, timeoutMs: 30_000 });
         if (c.code === 0) steps.push("Committed the plan");
-        const base = night.base_branch ?? "main";
+        const base = doc.base_branch ?? "main";
         let push = await run("git", ["push", "-q", "origin", `HEAD:${base}`], { cwd: root!, timeoutMs: 120_000 });
         if (push.code !== 0) {
           await run("git", ["pull", "-q", "--rebase", "origin", base], { cwd: root!, timeoutMs: 120_000 });
@@ -456,10 +468,10 @@ export function serve(o: ServeOpts) {
       }
       if (route === "GET /api/onboarding") {
         // Setup megaprompts, generated fresh from the current plan (also saved on Share).
-        need(root && hasNight(), "Save the team first.");
+        need(root && hasRun(), "Save the team first.");
         const setupNow = loadSetup(root!);
         const repo = (await ghRepo()) ?? "OWNER/REPO";
-        const cfg = loadNight(root!);
+        const cfg = loadConfig(root!);
         const tasks = safeTasks(root!);
         return json(res, 200, {
           repo,
@@ -473,14 +485,14 @@ export function serve(o: ServeOpts) {
         });
       }
       if (req.method === "GET" && url.pathname.startsWith("/api/onboarding/") && url.pathname.endsWith(".md")) {
-        need(root && hasNight(), "Save the team first.");
+        need(root && hasRun(), "Save the team first.");
         const id = decodeURIComponent(url.pathname.slice("/api/onboarding/".length, -3));
         const setupNow = loadSetup(root!);
         const member = setupNow.team.find((x) => x.id === id);
         need(member, "No such teammate.");
         const repo = (await ghRepo()) ?? "OWNER/REPO";
-        const md = teammatePrompt({ setup: setupNow, cfg: loadNight(root!), tasks: safeTasks(root!), member: member!, repo, leadName: setupNow.team[0]?.name ?? "the lead" });
-        res.writeHead(200, { "content-type": "text/markdown; charset=utf-8", "content-disposition": `attachment; filename="nightshift-setup-${id}.md"` });
+        const md = teammatePrompt({ setup: setupNow, cfg: loadConfig(root!), tasks: safeTasks(root!), member: member!, repo, leadName: setupNow.team[0]?.name ?? "the lead" });
+        res.writeHead(200, { "content-type": "text/markdown; charset=utf-8", "content-disposition": `attachment; filename="relay-setup-${id}.md"` });
         return res.end(md);
       }
       if (route === "POST /api/invite") {
@@ -503,9 +515,9 @@ export function serve(o: ServeOpts) {
         const ok = !checks.some((c) => c.status === "fail");
         let posted = false;
         if (ok) {
-          const cfg = loadNight(root!);
+          const cfg = loadConfig(root!);
           if (cfg.board.kind === "file" || cfg.board.issue) {
-            await postEnv("ready", "is ready for tonight (checks passed).", { os: OS_NAME }).then(() => (posted = true)).catch(() => {});
+            await postEnv("ready", "is ready to run (checks passed).", { os: OS_NAME }).then(() => (posted = true)).catch(() => {});
           }
         }
         return json(res, 200, { checks, ok, posted });
@@ -521,8 +533,8 @@ export function serve(o: ServeOpts) {
         need(root && myNode(), "Pick which teammate you are first.");
         if (live || daemonPid()) return json(res, 409, { error: "Already running on this computer." });
         const b = await readBody(req);
-        if (b.everyone) await postEnv("go", b.day ? "started a day shift for everyone." : "started the night for everyone.").catch(() => {});
-        return json(res, 200, { ok: true, pid: startNode(!!b.day) });
+        if (b.everyone) await postEnv("go", b.again ? "restarted the run for everyone." : "started the run for everyone.").catch(() => {});
+        return json(res, 200, { ok: true, pid: startNode(!!b.again) });
       }
       if (route === "POST /api/stop") {
         need(root && myNode(), "No project open.");
@@ -530,25 +542,25 @@ export function serve(o: ServeOpts) {
         const dir = join(paths(root!).local, myNode()!);
         mkdirSync(dir, { recursive: true });
         writeFileSync(join(dir, "STOP"), new Date().toISOString());
-        if (team) await postEnv("stop", "stopped the night for everyone.").catch(() => {});
+        if (team) await postEnv("stop", "stopped the run for everyone.").catch(() => {});
         if (live) live.stop(team ? "team stop" : "stopped from the app");
         return json(res, 200, { ok: true, team });
       }
 
-      // ---------- tonight & morning ----------
+      // ---------- live & results ----------
       if (route === "GET /api/snapshot") {
-        await currentNight();
+        await currentRun();
         const dm = getObserver();
         need(dm, "Finish the setup first.");
         if (!live) await dm!.refreshStates().catch(() => {});
         const msgs = await boardMsgs();
         if (!live) for (const m of msgs) dm!.ingest(m, true);
-        const n = dm!.night;
+        const n = dm!.runId;
         return json(res, 200, {
           ...dm!.snapshot(),
           live: !!live,
           daemonPid: live ? process.pid : daemonPid(),
-          board: msgs.filter((m) => !m.env?.night || m.env.night === n).slice(-300).map((m) => ({ id: m.id, author: m.author, createdAt: m.createdAt, text: m.text.split("\n")[0], env: m.env })),
+          board: msgs.filter((m) => !m.env?.runId || m.env.runId === n).slice(-300).map((m) => ({ id: m.id, author: m.author, createdAt: m.createdAt, text: m.text.split("\n")[0], env: m.env })),
           ledger: (live ? dm!.ledger.tail(200) : dm!.ledger.all().slice(-200)),
         });
       }
@@ -560,7 +572,7 @@ export function serve(o: ServeOpts) {
         return;
       }
       if (route === "POST /api/reserve") {
-        // Day shift: folders the humans are working on. Agents treat them as taken.
+        // Folders the humans are editing right now. Agents treat them as taken.
         need(root && myNode(), "No project open.");
         const b = await readBody(req);
         const globs = (Array.isArray(b.globs) ? b.globs : []).map((g: unknown) => String(g).trim()).filter(Boolean).slice(0, 30);
@@ -568,9 +580,9 @@ export function serve(o: ServeOpts) {
         return json(res, 200, { ok: true, globs });
       }
       if (route === "POST /api/retry") {
-        // Morning: retry a set-aside task with a human hint, as a new task <id>-rN.
+        // Results: retry a set-aside task with a human hint, as a new task <id>-rN.
         need(root && myNode(), "No project open.");
-        await currentNight();
+        await currentRun();
         const dm = getObserver();
         need(dm, "Finish the setup first.");
         const b = await readBody(req);
@@ -584,7 +596,7 @@ export function serve(o: ServeOpts) {
         while (dm!.tasks.some((t) => t.id === `${base}-r${n}`)) n++;
         const id = `${base}-r${n}`;
         const hint = String(b.hint ?? "").trim();
-        const kept = `ns/${dm!.night}/${orig!.id}-a${st!.attempt}`;
+        const kept = `relay-work/${dm!.runId}/${orig!.id}-a${st!.attempt}`;
         const brief = `${orig!.brief || orig!.title}\n\n## This is a retry\nThe previous attempt (${orig!.id}) was set aside: ${st!.note ?? "no reason recorded"}\nIts work is kept on the branch \`${kept}\` if it helps (read it with \`git show ${kept}:<path>\` or \`git diff HEAD ${kept}\`).${hint ? `\n\n## Hint from the team\n${hint}` : ""}`;
         const { fake, ...rest } = orig!;
         await dm!.addDynamicTask({ ...rest, id, retry_of: base, brief, ...(fake ? { fake: { ...fake, fail: false, review: "approve", stuck: false } } : {}) }, `Retrying ${orig!.id} as ${id}${hint ? " with a hint from the team" : ""}.`);
@@ -592,27 +604,27 @@ export function serve(o: ServeOpts) {
       }
       if (route === "POST /api/submission") {
         need(root && myNode(), "No project open.");
-        const night = await currentNight();
-        need(night, "Finish the setup first.");
-        return json(res, 200, await draftSubmission(root!, myNode()!, night!));
+        const runId = await currentRun();
+        need(runId, "Finish the setup first.");
+        return json(res, 200, await draftSubmission(root!, myNode()!, runId!));
       }
       if (route === "POST /api/submission/commit") {
         need(root && myNode(), "No project open.");
         const b = await readBody(req);
         need(typeof b.markdown === "string" && b.markdown.trim(), "Nothing to add.");
-        const night = await currentNight();
-        const sha = await commitSubmission(root!, myNode()!, night!, b.markdown);
+        const runId = await currentRun();
+        const sha = await commitSubmission(root!, myNode()!, runId!, b.markdown);
         return json(res, 200, { ok: true, sha });
       }
       if (route === "GET /api/report") {
         need(root && myNode(), "No project open.");
-        return json(res, 200, await buildReport(root!, myNode()!, await currentNight()));
+        return json(res, 200, await buildReport(root!, myNode()!, await currentRun()));
       }
       if (route === "POST /api/report/pr") {
         need(root && myNode(), "No project open.");
-        const night = await currentNight();
-        const r = await buildReport(root!, myNode()!, night);
-        return json(res, 200, { url: await openMorningPr(root!, r, night) });
+        const runId = await currentRun();
+        const r = await buildReport(root!, myNode()!, runId);
+        return json(res, 200, { url: await openRunPr(root!, r, runId) });
       }
 
       // ---------- static app ----------
@@ -654,14 +666,20 @@ export function serve(o: ServeOpts) {
   }
   setInterval(() => push({ kind: "ping", at: Date.now() }), 15_000).unref();
 
-  // Auto-start: when this computer opted in and someone posts "go" for tonight, start the node.
+  // Auto-start: when this computer opted in and a teammate posts "go", start the node (any time of day).
+  // A "go" older than this computer's last stop is ignored, so stopping here sticks.
   setInterval(async () => {
     try {
       if (live || !root || !settings.autoStart[root] || !myNode() || daemonPid()) return;
-      const cfg = loadNight(root);
+      const stopFile = join(paths(root).local, myNode()!, "STOP");
+      const stoppedAt = existsSync(stopFile) ? statSync(stopFile).mtimeMs : 0;
       const msgs = await boardMsgs();
-      const go = msgs.some((m) => m.env?.type === "go" && m.env.night === nightName(cfg) && m.env.from !== myNode());
-      if (go) startNode();
+      const go = msgs.filter((m) => m.env?.type === "go" && m.env.from !== myNode() && m.env.at > stoppedAt).pop();
+      if (!go) return;
+      // The lead may have shared a newer plan (a new run id): pull it before starting.
+      if (go.env!.runId && go.env!.runId !== runName(loadConfig(root))) await run("git", ["pull", "-q", "--ff-only"], { cwd: root, timeoutMs: 120_000 });
+      if (go.env!.runId && go.env!.runId !== runName(loadConfig(root))) return;
+      startNode();
     } catch {
       /* try again next tick */
     }

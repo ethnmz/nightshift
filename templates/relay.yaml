@@ -1,8 +1,8 @@
-# Nightshift night config. Commit this file; every node reads the same copy.
+# Relay run config. Commit this file; every computer reads the same copy.
 version: 1
 project: my-hackathon-project
-night: auto            # "auto" = this evening's date; the integration branch is night/<date>
-base_branch: main      # never written to overnight
+run_id: auto           # "Share with the team" sets a new id (YYYY-MM-DD-HHMM) per plan; the integration branch is relay/<run_id>
+base_branch: main      # agents never write to it
 remote: origin
 
 # The team board. GitHub issue (like the old tools/board) or a shared file for rehearsals.
@@ -28,14 +28,14 @@ auth: subscription
 # the limit resets (or this many minutes if the agent does not say when).
 usage_limit_pause_minutes: 30
 
-# Evening pre-authorization. These are the decisions humans used to make on the board.
-# All must be true before a night can start, so nothing overnight waits on a person.
+# Standing pre-authorization. These are the decisions humans used to make on the board.
+# All must be true before a run can start, so nothing during it waits on a person.
 authorize:
   board_posts: true             # agents post and answer on the board without approval
-  merge_to_night_branch: true   # green + reviewed work merges into night/<date> (never main)
+  merge_to_run_branch: true   # green + reviewed work merges into relay/<run_id> (never main)
   work_stealing: true           # an idle node takes ready tasks from another lane (no lead approval)
   contract_changes: true        # the contract lane may apply requested contract changes
-  decide_with_assumptions: true # agents decide unspecified details, record them for the morning
+  decide_with_assumptions: true # agents decide unspecified details, record them for the team to review
 
 check: "npm test"               # global check after every task (one-shot; no servers or watchers)
 gate:                           # integration gate every N merges by a node; failure queues a fixer
@@ -44,7 +44,7 @@ gate:                           # integration gate every N merges by a node; fai
 
 concurrency: 2                  # agents per Mac
 # Usage cap. Measured as Claude Code's estimate at API prices. On subscriptions nothing is billed;
-# this just stops one node from using its whole plan in a night. (Codex reports tokens, not $.)
+# this just stops one node from using its whole plan in one run. (Codex reports tokens, not $.)
 budget: { node_usd: 25, team_usd: 100 }
 limits:
   task_minutes: 45

@@ -1,6 +1,6 @@
 # Task {{task_id}}: {{title}}
 
-Lane: {{lane}} · Role: {{role}} · Night branch: {{night_branch}}
+Lane: {{lane}} · Role: {{role}} · Run branch: {{run_branch}}
 
 ## Brief
 {{brief}}
@@ -8,14 +8,14 @@ Lane: {{lane}} · Role: {{role}} · Night branch: {{night_branch}}
 ## Lease (the only paths you may change)
 {{lease_list}}
 
-## Acceptance (Nightshift runs these after you finish; all must pass)
+## Acceptance (Relay runs these after you finish; all must pass)
 {{acceptance_list}}
 
 Global check: `{{check}}`
 
-## Already merged tonight
+## Already merged in this run
 {{merged}}
 
 {{extra}}
 
-Work in the current directory (a git worktree of the night branch). Make the acceptance commands pass. Add tests for logic you write. Keep the change focused on this task.
+Work in the current directory (a git worktree of the run branch). Make the acceptance commands pass. Add tests for logic you write. Keep the change focused on this task.

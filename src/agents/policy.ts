@@ -1,4 +1,4 @@
-// The overnight permission policy. Pure and synchronous: every tool call gets an
+// The run-time permission policy. Pure and synchronous: every tool call gets an
 // immediate allow or deny. There is no "ask" outcome — nobody is awake to answer.
 import { isAbsolute, relative, resolve, dirname, basename, join } from "node:path";
 import { realpathSync, existsSync } from "node:fs";
@@ -37,14 +37,14 @@ const SECRET_PATH = /(^|[\s/'"=:])(\.env(?!\.example|\.sample|\.template)(\.[\w-
 
 // Dangerous anywhere in a command line, whatever wraps it.
 const DENY_PATTERNS: [RegExp, string][] = [
-  [/\bgit\s+push\b/, "agents never push; Nightshift merges for you"],
-  [/\bgit\s+(remote|worktree|filter-branch|replace|gc|prune|update-ref)\b/, "git plumbing that changes shared state is reserved for Nightshift"],
+  [/\bgit\s+push\b/, "agents never push; Relay merges for you"],
+  [/\bgit\s+(remote|worktree|filter-branch|replace|gc|prune|update-ref)\b/, "git plumbing that changes shared state is reserved for Relay"],
   [/\bgit\s+config\s+(--global|--system)/, "global git config is off-limits"],
-  [/\bgit\s+(checkout|switch)\s+(-[bBc]\s+)?(main|master|night\/)/, "stay on your task branch"],
-  [/\bgit\s+branch\s+-[dD]\b/, "deleting branches is reserved for Nightshift"],
+  [/\bgit\s+(checkout|switch)\s+(-[bBc]\s+)?(main|master|relay\/)/, "stay on your task branch"],
+  [/\bgit\s+branch\s+-[dD]\b/, "deleting branches is reserved for Relay"],
   [/--force\b|(^|\s)-f\s+push|--no-verify\s+push/, "force operations are not allowed"],
   [/(^|[;&|\s(])(sudo|su|doas)\s/, "no privilege escalation"],
-  [/(^|[;&|\s(])(gh|hub|glab)\s/, "GitHub CLI is reserved for Nightshift; use the nightshift tools to talk to the team"],
+  [/(^|[;&|\s(])(gh|hub|glab)\s/, "GitHub CLI is reserved for Relay; use the relay tools to talk to the team"],
   [/(curl|wget)[^|]*\|\s*(ba|z)?sh\b/, "piping downloads into a shell is not allowed"],
   [/(^|[;&|\s(])(ssh|scp|sftp|rsync|nc|ncat|telnet)\s/, "no remote shells"],
   [/(^|[;&|\s(])(osascript|launchctl|pmset|caffeinate|shutdown|reboot|security|defaults|open)\s/, "no OS-level control"],
@@ -59,7 +59,7 @@ const READ_ONLY_DENY = /\bgit\s+(commit|add|reset|rebase|checkout|switch|merge|s
 const deny = (why: string): Decision => ({
   allow: false,
   message:
-    `Denied by Nightshift policy: ${why}. No human is available to approve this, so do not retry it. ` +
+    `Denied by Relay policy: ${why}. No human is available to approve this, so do not retry it. ` +
     `Take another route that stays inside your task, or call record_assumption / report_blocker and continue.`,
 });
 
@@ -136,8 +136,8 @@ export function commandWords(line: string): string[] {
 
 export function decide(tool: string, input: Record<string, unknown>, ctx: PolicyCtx): Decision {
   if (NEVER_TOOLS.includes(tool)) return deny(`${tool} needs a human`);
-  if (tool.startsWith("mcp__nightshift__")) return { allow: true };
-  if (tool.startsWith("mcp__")) return deny("only the nightshift MCP tools are available overnight");
+  if (tool.startsWith("mcp__relay__")) return { allow: true };
+  if (tool.startsWith("mcp__")) return deny("only the relay MCP tools are available during a run");
 
   if (READ_TOOLS.has(tool)) {
     const p = String(input.file_path ?? input.path ?? input.notebook_path ?? "").replace(/\\/g, "/");
@@ -151,7 +151,7 @@ export function decide(tool: string, input: Record<string, unknown>, ctx: Policy
     if (!p) return deny("no file path given");
     const rel = relInside(ctx.cwd, p);
     if (rel === null) return deny(`writes must stay inside the task worktree (${ctx.cwd})`);
-    if (/^(\.git|\.nightshift)([\/\\]|$)/.test(rel)) return deny("git internals and .nightshift/ are managed by Nightshift");
+    if (/^(\.git|\.relay)([\/\\]|$)/.test(rel)) return deny("git internals and .relay/ are managed by Relay");
     if (SECRET_PATH.test(" " + rel.replace(/\\/g, "/"))) return deny("secrets files are never written");
     return { allow: true };
   }
@@ -168,12 +168,12 @@ export function decide(tool: string, input: Record<string, unknown>, ctx: Policy
     for (const w of commandWords(cmd)) {
       const base = w.split("/").pop()!;
       if (w.startsWith("./") || w.startsWith("node_modules/.bin/") || w.startsWith(".venv/bin/")) continue; // project-local scripts
-      if (!allowed.has(base)) return deny(`"${base}" is not on this night's command allowlist (allow_commands in night.yaml)`);
+      if (!allowed.has(base)) return deny(`"${base}" is not on this run's command allowlist (allow_commands in relay.yaml)`);
     }
     return { allow: true };
   }
 
-  return deny(`tool ${tool} is not enabled overnight`);
+  return deny(`tool ${tool} is not enabled during a run`);
 }
 
 /** Wraps any decision source so it ALWAYS resolves (a hanging permission callback would block forever). */

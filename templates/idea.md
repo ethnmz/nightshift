@@ -1,6 +1,6 @@
 # The idea
 
-Write this together in the evening. The planner turns it into contracts and tasks.
+Write this together before the run. The planner turns it into contracts and tasks.
 
 ## Problem and users
 

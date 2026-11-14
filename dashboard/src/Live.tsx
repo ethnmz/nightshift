@@ -30,7 +30,7 @@ interface Packet {
   born: number;
 }
 
-/** Turn a board message into a packet moving between teammates (or into the night branch). */
+/** Turn a board message into a packet moving between teammates (or into the run branch). */
 function toPacket(m: BoardRow, snap: Snapshot): Packet | null {
   const e = m.env;
   if (!e) return null;
@@ -85,7 +85,7 @@ function sentence(m: BoardRow, snap: Snapshot): string | null {
     case "task_claimed":
       return b.takeover ? `${who} took over “${title}” from ${b.takeover}` : b.stolen ? `${who} picked up “${title}” to help out` : `${who} started “${title}”`;
     case "task_parked":
-      return `“${title}” is set aside for the morning`;
+      return `“${title}” is set aside for review`;
     case "task_released":
       return `${who} hit a plan limit and handed back “${title}”`;
     case "ask":
@@ -101,7 +101,7 @@ function sentence(m: BoardRow, snap: Snapshot): string | null {
     case "gate_passed":
       return `The full check passed`;
     case "node_up":
-      return `${node?.name ?? e.from}'s computer joined the night`;
+      return `${node?.name ?? e.from}'s computer joined the run`;
     case "node_down":
       return `${node?.name ?? e.from}'s computer finished`;
     case "ready":
@@ -110,7 +110,7 @@ function sentence(m: BoardRow, snap: Snapshot): string | null {
   return null;
 }
 
-export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<AppState | null> }) {
+export function Live({ app, reload }: { app: AppState; reload: () => Promise<AppState | null> }) {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [err, setErr] = useState("");
   const [packets, setPackets] = useState<Packet[]>([]);
@@ -206,13 +206,13 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
             <span className="text-2xl text-neutral-500"> / {snap.tasks.length} merged</span>
           </div>
           <div className="text-sm text-neutral-400">
-            {snap.day ? "Day shift on" : "Night of"} {snap.night}
+            Run {snap.runId}
             {snap.cutoffAt ? ` · no new tasks after ${new Date(snap.cutoffAt).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}` : ""}
-            {parked ? ` · ${parked} set aside for the morning` : ""}
+            {parked ? ` · ${parked} set aside for review` : ""}
             {snap.agent !== "fake" && snap.auth === "subscription" ? ` · est. usage $${spent.toFixed(2)} (not billed)` : ""}
           </div>
         </div>
-        <div className="h-1 min-w-40 flex-1 overflow-hidden rounded-full bg-night-700">
+        <div className="h-1 min-w-40 flex-1 overflow-hidden rounded-full bg-ink-700">
           <div className="h-full rounded-full bg-copper transition-all" style={{ width: `${(done / Math.max(1, snap.tasks.length)) * 100}%` }} />
         </div>
         <div className="relative">
@@ -221,10 +221,10 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
               Stop…
             </Button>
           ) : snap.finished ? (
-            <span className="text-sm text-emerald-300">Night finished. See Morning.</span>
+            <span className="text-sm text-emerald-300">Run finished. See Results.</span>
           ) : null}
           {stopOpen && (
-            <div className="absolute right-0 z-10 mt-1 w-56 space-y-1 rounded-md border border-night-600 bg-night-850 p-2 shadow-xl">
+            <div className="absolute right-0 z-10 mt-1 w-56 space-y-1 rounded-md border border-ink-600 bg-ink-850 p-2 shadow-xl">
               <button className="w-full rounded-lg px-3 py-2 text-left text-sm text-neutral-200 hover:bg-white/5" onClick={async () => (await api.stop(false), setStopOpen(false), void reload())}>
                 Stop this computer
               </button>
@@ -250,12 +250,15 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
             const p = positions.get(n.id)!;
             return <line key={n.id} x1={p.x} y1={p.y} x2={HUB.x} y2={HUB.y} stroke="#ecebe4" strokeOpacity="0.08" strokeWidth="1" />;
           })}
-          {/* hub: the shared night branch */}
+          {/* hub: the shared run branch */}
           <circle cx={HUB.x} cy={HUB.y} r="70" fill="url(#hubglow)" />
           <circle cx={HUB.x} cy={HUB.y} r="34" fill="#1c1c1c" stroke="#4a9d68" strokeOpacity="0.8" />
-          <path transform={`translate(${HUB.x - 12} ${HUB.y - 16}) scale(0.8)`} d="M20 4a12 12 0 1 0 8 20A10 10 0 0 1 20 4z" fill="#ecebe4" />
+          <g transform={`translate(${HUB.x - 13} ${HUB.y - 16}) scale(0.8)`} fill="none" stroke="#ecebe4" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 12h17l-5-5" />
+            <path d="M26 20H9l5 5" />
+          </g>
           <text x={HUB.x} y={HUB.y + 54} textAnchor="middle" fill="#8a8a85" fontSize="11" fontFamily="JetBrains Mono, monospace">
-            night branch · {done} merged
+            run branch · {done} merged
           </text>
 
           {/* packets */}
@@ -316,7 +319,7 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
             );
           })}
         </svg>
-        <div className="relative flex flex-wrap gap-x-5 gap-y-1 border-t border-night-700 bg-night-900 px-5 py-3 text-xs text-neutral-400">
+        <div className="relative flex flex-wrap gap-x-5 gap-y-1 border-t border-ink-700 bg-ink-900 px-5 py-3 text-xs text-neutral-400">
           {(Object.keys(KIND) as Kind[]).map((k) => (
             <span key={k} className="flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full" style={{ background: KIND[k].color }} />
@@ -327,7 +330,7 @@ export function Tonight({ app, reload }: { app: AppState; reload: () => Promise<
       </Card>
 
       {snap.authLost && <Note kind="warn">This computer's agent login stopped working, so its tasks went to teammates. Sign in again ({snap.agent === "codex" ? "codex login" : "run claude, then /login"}); it resumes on its own within 30 minutes.</Note>}
-      <DayShift snap={snap} running={running} reload={reload} />
+      <WorkAlongside snap={snap} running={running} reload={reload} />
       <div className="grid gap-5 md:grid-cols-[1fr_1fr]">
         <Card>
           <div className="mb-4 text-lg font-light text-cream">What just happened</div>
@@ -371,8 +374,8 @@ function TaskList({ tasks, nodes, compact }: { tasks: TaskRow[]; nodes: NodeSpec
   );
 }
 
-/** Day shift: keep agents building leftovers and retries while people work, outside reserved folders. */
-function DayShift({ snap, running, reload }: { snap: Snapshot; running: boolean; reload: () => Promise<AppState | null> }) {
+/** Work alongside the agents: reserve the folders you're editing, and restart the run for leftovers and retries. */
+function WorkAlongside({ snap, running, reload }: { snap: Snapshot; running: boolean; reload: () => Promise<AppState | null> }) {
   const mine = snap.reserves?.[snap.node.id] ?? [];
   const [text, setText] = useState(mine.join(", "));
   const [busy, setBusy] = useState(false);
@@ -389,21 +392,23 @@ function DayShift({ snap, running, reload }: { snap: Snapshot; running: boolean;
     }
     setBusy(false);
   };
-  if (running && !snap.day && !mine.length) return null;
   return (
     <Card className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1">
-          <div className="text-lg font-light text-cream">Day shift</div>
-          <p className="text-sm text-neutral-400">Keep agents building {left ? `the ${left} unfinished task${left === 1 ? "" : "s"} and any retries` : "retries"} while you work. Tell them which folders you're editing so they stay out.</p>
+          <div className="text-lg font-light text-cream">Working alongside the agents?</div>
+          <p className="text-sm text-neutral-400">
+            Tell them which folders you're editing and they'll stay out.
+            {!running && (left ? ` ${left} task${left === 1 ? " is" : "s are"} not finished yet; start again to keep going.` : " Start again any time to run retries.")}
+          </p>
         </div>
         {!running && (
           <div className="flex gap-2">
             <Button kind="soft" busy={busy} onClick={async () => (await api.start(false, true), void reload())}>
-              Start on this computer
+              Start again here
             </Button>
             <Button busy={busy} onClick={async () => (await api.start(true, true), void reload())}>
-              Start for everyone
+              Start again for everyone
             </Button>
           </div>
         )}

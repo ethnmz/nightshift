@@ -1,10 +1,10 @@
-// Run in the evening on every Mac, while people are still awake. Anything that could make
-// the night stall at 3 a.m. (auth, push access, sleep, power, a broken check) fails here.
+// Run on every computer before a run, while people are still around. Anything that could make
+// the run stall later (auth, push access, sleep, power, a broken check) fails here.
 import { mkdtempSync, rmSync, statfsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { loadNight, loadTasks, missingAuthorizations, nightBranch, nightName, findNode, agentFor, KEY_ENV } from "./config.js";
+import { loadConfig, loadTasks, missingAuthorizations, runBranch, runName, findNode, agentFor, KEY_ENV } from "./config.js";
 import { Git } from "./git.js";
 import { run, sh, childEnv } from "./exec.js";
 import { IS_MAC, IS_WIN, OS_NAME, bashPath, powerSource, resolveCli } from "./platform.js";
@@ -23,10 +23,10 @@ export async function preflight(root: string, nodeId: string, opts: { live?: boo
   // 1. Plan and pre-authorization
   let cfg;
   try {
-    cfg = loadNight(root);
-    add("night.yaml", "pass", `${cfg.nodes.length} nodes, board: ${cfg.board.kind}`);
+    cfg = loadConfig(root);
+    add("relay.yaml", "pass", `${cfg.nodes.length} nodes, board: ${cfg.board.kind}`);
   } catch (e) {
-    add("night.yaml", "fail", String(e));
+    add("relay.yaml", "fail", String(e));
     return out;
   }
   try {
@@ -38,7 +38,7 @@ export async function preflight(root: string, nodeId: string, opts: { live?: boo
     add("tasks.yaml", "fail", String(e));
   }
   const missing = missingAuthorizations(cfg);
-  add("evening authorizations", missing.length ? "fail" : "pass", missing.length ? `not granted: ${missing.join(", ")} (the night would stall waiting for a person)` : "all standing decisions granted");
+  add("standing authorizations", missing.length ? "fail" : "pass", missing.length ? `not granted: ${missing.join(", ")} (the run would stall waiting for a person)` : "all standing decisions granted");
   let me;
   try {
     me = findNode(cfg, nodeId);
@@ -48,16 +48,16 @@ export async function preflight(root: string, nodeId: string, opts: { live?: boo
     return out;
   }
 
-  // 2. Git remote: read, push to night/*, compare-and-swap refs (the claim mechanism)
-  const git = new Git(root, { name: "nightshift preflight", email: `${me.id}@nightshift.local` });
+  // 2. Git remote: read, push to relay/*, compare-and-swap refs (the claim mechanism)
+  const git = new Git(root, { name: "relay preflight", email: `${me.id}@relay.local` });
   const ls = await git.raw(["ls-remote", "--heads", cfg.remote, cfg.base_branch]);
   add("remote reachable", ls.code === 0 && ls.stdout.includes(cfg.base_branch) ? "pass" : "fail", ls.code === 0 ? `${cfg.remote}/${cfg.base_branch}` : ls.stderr.trim().slice(0, 300));
   const head = await git.revParse("HEAD");
   if (head) {
-    const night = nightBranch(nightName(cfg));
-    const dry = await git.raw(["push", "--dry-run", "--quiet", cfg.remote, `${head}:refs/heads/${night}-preflight-${me.id}`]);
-    add("push access (night branch)", dry.code === 0 ? "pass" : "fail", dry.code === 0 ? `can push to ${night}` : dry.stderr.trim().slice(0, 300));
-    const ref = `refs/nightshift/preflight/${me.id}`;
+    const runId = runBranch(runName(cfg));
+    const dry = await git.raw(["push", "--dry-run", "--quiet", cfg.remote, `${head}:refs/heads/${runId}-preflight-${me.id}`]);
+    add("push access (run branch)", dry.code === 0 ? "pass" : "fail", dry.code === 0 ? `can push to ${runId}` : dry.stderr.trim().slice(0, 300));
+    const ref = `refs/relay/preflight/${me.id}`;
     const tree = await git.emptyTree().catch(() => "");
     const sha = tree ? await git.ok(["commit-tree", tree, "-m", "preflight"]).catch(() => "") : "";
     const create = sha ? await git.raw(["push", "--quiet", `--force-with-lease=${ref}:`, cfg.remote, `${sha}:${ref}`]) : { code: 1, stderr: "commit-tree failed" };
@@ -72,7 +72,7 @@ export async function preflight(root: string, nodeId: string, opts: { live?: boo
     const who = await run("gh", ["api", "user", "--jq", ".login"], { timeoutMs: 20_000 });
     const login = who.stdout.trim();
     if (who.code !== 0) add("gh auth", "fail", "gh is not logged in. Run: gh auth login");
-    else if (me.login && login.toLowerCase() !== me.login.toLowerCase()) add("gh auth", "fail", `gh is logged in as ${login}, night.yaml says ${me.login}. One login per teammate, or nodes miss each other.`);
+    else if (me.login && login.toLowerCase() !== me.login.toLowerCase()) add("gh auth", "fail", `gh is logged in as ${login}, relay.yaml says ${me.login}. One login per teammate, or nodes miss each other.`);
     else add("gh auth", "pass", login);
     const repo = cfg.board.repo;
     if (repo) {
@@ -83,7 +83,7 @@ export async function preflight(root: string, nodeId: string, opts: { live?: boo
 
   // 4. The global check runs, non-interactively, on a fresh copy of the base branch
   if (cfg.check) {
-    const tmp = mkdtempSync(join(tmpdir(), "nightshift-preflight-"));
+    const tmp = mkdtempSync(join(tmpdir(), "relay-preflight-"));
     const wt = join(tmp, "wt");
     const base = `refs/remotes/${cfg.remote}/${cfg.base_branch}`;
     await git.raw(["fetch", "--quiet", cfg.remote, `+refs/heads/${cfg.base_branch}:${base}`]);
@@ -99,7 +99,7 @@ export async function preflight(root: string, nodeId: string, opts: { live?: boo
   // 5. The computer stays awake, on power, with room to work
   const power = powerSource();
   add("power", power === "battery" ? "fail" : power === "ac" ? "pass" : "warn", power === "battery" ? "on battery: plug in, or the computer may sleep and its tasks move to teammates" : power === "ac" ? "plugged in" : "could not read the power source; keep it plugged in");
-  add("stay awake", "pass", IS_MAC ? "Nightshift holds sleep off with caffeinate while it runs. Keep the lid open." : IS_WIN ? "Nightshift asks Windows not to sleep while it runs. Keep the lid open (or set 'lid close: do nothing')." : "Nightshift uses systemd-inhibit while it runs.");
+  add("stay awake", "pass", IS_MAC ? "Relay holds sleep off with caffeinate while it runs. Keep the lid open." : IS_WIN ? "Relay asks Windows not to sleep while it runs. Keep the lid open (or set 'lid close: do nothing')." : "Relay uses systemd-inhibit while it runs.");
   if (IS_WIN) {
     const b = bashPath();
     add("Git Bash", b ? "pass" : "fail", b ? `checks run in ${b}` : "Git Bash not found. Install Git for Windows: winget install Git.Git");
@@ -111,7 +111,7 @@ export async function preflight(root: string, nodeId: string, opts: { live?: boo
     const sleepMin = /\bsleep\s+(\d+)/.exec(lid.stdout)?.[1];
     add("system sleep", "pass", `sleep=${sleepMin ?? "?"} min; caffeinate holds it off. Keep the lid open (or use an external display).`);
     const upd = await run("defaults", ["read", "/Library/Preferences/com.apple.SoftwareUpdate", "AutomaticallyInstallMacOSUpdates"], { timeoutMs: 5000 });
-    add("auto OS updates", upd.stdout.trim() === "1" ? "warn" : "pass", upd.stdout.trim() === "1" ? "automatic macOS installs are on; an overnight restart would stop this node (others take over its tasks)" : "no automatic restart configured");
+    add("auto OS updates", upd.stdout.trim() === "1" ? "warn" : "pass", upd.stdout.trim() === "1" ? "automatic macOS installs are on; an automatic restart would stop this node (others take over its tasks)" : "no automatic restart configured");
   }
   try {
     const fs = statfsSync(root);
@@ -125,7 +125,7 @@ export async function preflight(root: string, nodeId: string, opts: { live?: boo
   const agent = agentFor(cfg, me);
   const keysInShell = KEY_ENV.filter((k) => process.env[k]);
   if (cfg.auth === "subscription" && keysInShell.length)
-    add("API keys in shell", "warn", `${keysInShell.join(", ")} set in this shell. Nightshift removes them from agents so your subscription is used, not the key.`);
+    add("API keys in shell", "warn", `${keysInShell.join(", ")} set in this shell. Relay removes them from agents so your subscription is used, not the key.`);
   const agentEnv = cfg.auth === "subscription" ? KEY_ENV : [];
   if (agent === "claude") {
     const [cbin, cpre] = resolveCli("claude");
@@ -139,7 +139,7 @@ export async function preflight(root: string, nodeId: string, opts: { live?: boo
         else add("Claude login", "pass", sub ? "claude.ai subscription (Pro/Max/Team)" : String(j.authMethod));
         if (j.loginExpiresAt) {
           const hrs = (Date.parse(j.loginExpiresAt) - Date.now()) / 36e5;
-          add("login expiry", hrs < 16 ? "fail" : hrs < 72 ? "warn" : "pass", hrs < 16 ? `login expires in ${hrs.toFixed(1)} h, during the night. Run /login in Claude Code now.` : `login valid for ${(hrs / 24).toFixed(1)} more days`);
+          add("login expiry", hrs < 16 ? "fail" : hrs < 72 ? "warn" : "pass", hrs < 16 ? `login expires in ${hrs.toFixed(1)} h, during the run. Run /login in Claude Code now.` : `login valid for ${(hrs / 24).toFixed(1)} more days`);
         }
       } catch {
         add("Claude login", "warn", "could not read `claude auth status`; the live check below confirms the login");

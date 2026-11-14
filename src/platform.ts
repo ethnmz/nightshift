@@ -22,12 +22,12 @@ export function killTree(pid: number | undefined) {
 let bashCache: string | null | undefined;
 /**
  * The shell for acceptance checks and gates. On Windows this is Git Bash (installed with
- * Git for Windows, which Nightshift needs anyway), so the same `npm test && ...` lines work
+ * Git for Windows, which Relay needs anyway), so the same `npm test && ...` lines work
  * on every teammate's computer.
  */
 export function bashPath(): string | null {
   if (bashCache !== undefined) return bashCache;
-  if (process.env.NIGHTSHIFT_BASH) return (bashCache = process.env.NIGHTSHIFT_BASH);
+  if (process.env.RELAY_BASH) return (bashCache = process.env.RELAY_BASH);
   if (!IS_WIN) return (bashCache = existsSync("/bin/bash") ? "/bin/bash" : "bash");
   const candidates: string[] = [];
   const exec = spawnSync("git", ["--exec-path"], { encoding: "utf8", windowsHide: true });
@@ -54,7 +54,7 @@ export function shellArgv(line: string): [string, string[]] {
  * shims that Node cannot spawn directly, so we run the package's JS entry with node.
  */
 export function resolveCli(name: "codex" | "claude", override?: string): [string, string[]] {
-  const o = override ?? (name === "codex" ? process.env.NIGHTSHIFT_CODEX_BIN : process.env.NIGHTSHIFT_CLAUDE_BIN);
+  const o = override ?? (name === "codex" ? process.env.RELAY_CODEX_BIN : process.env.RELAY_CLAUDE_BIN);
   if (o) return /\.(c|m)?js$/.test(o) ? [process.execPath, [o]] : [o, []];
   if (!IS_WIN) return [name, []];
   if (name === "claude") {
@@ -84,7 +84,7 @@ export function keepAwake(pid: number): string {
       spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps], { detached: true, stdio: "ignore", windowsHide: true }).unref();
       return "Windows power request";
     }
-    spawn("systemd-inhibit", ["--what=idle:sleep", "--why=nightshift", "tail", `--pid=${pid}`, "-f", "/dev/null"], { detached: true, stdio: "ignore" }).unref();
+    spawn("systemd-inhibit", ["--what=idle:sleep", "--why=relay", "tail", `--pid=${pid}`, "-f", "/dev/null"], { detached: true, stdio: "ignore" }).unref();
     return "systemd-inhibit";
   } catch {
     return "none";
@@ -121,8 +121,8 @@ export function openBrowser(url: string) {
   }
 }
 
-/** Per-user Nightshift settings (recent projects, which teammate this computer is). */
-export const USER_DIR = join(homedir(), ".nightshift");
+/** Per-user Relay settings (recent projects, which teammate this computer is). */
+export const USER_DIR = join(homedir(), ".relay");
 
 export function which(cmd: string): boolean {
   const r = spawnSync(IS_WIN ? "where" : "which", [cmd], { stdio: "ignore", windowsHide: true, shell: IS_WIN });

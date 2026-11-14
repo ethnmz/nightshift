@@ -3,10 +3,10 @@ import { api, AppState } from "./api";
 
 import { Welcome } from "./Welcome";
 import { SetupWizard } from "./Setup";
-import { Tonight } from "./Tonight";
-import { Morning } from "./Morning";
+import { Live } from "./Live";
+import { Results } from "./Results";
 
-type Tab = "setup" | "tonight" | "morning";
+type Tab = "setup" | "live" | "results";
 
 export default function App() {
   const [app, setApp] = useState<AppState | null>(null);
@@ -36,14 +36,14 @@ export default function App() {
   useEffect(() => {
     void reload().then((a) => {
       if (!a?.project) return;
-      // Open on Tonight once the night is running, or the board exists and this computer is set.
-      setTab(a.running || (a.board?.issue && a.me && a.project.tasks) ? "tonight" : "setup");
+      // Open on Live once a run is going, or the board exists and this computer is set.
+      setTab(a.running || (a.board?.issue && a.me && a.project.tasks) ? "live" : "setup");
     });
     const t = setInterval(() => void reload(), 5000);
     return () => clearInterval(t);
   }, [reload]);
 
-  if (err && !app) return <div className="p-8 text-red-300">Cannot reach Nightshift: {err}. Is the Nightshift window still open?</div>;
+  if (err && !app) return <div className="p-8 text-red-300">Cannot reach Relay: {err}. Is the Relay window still open?</div>;
   if (!app) return null;
   if (!app.project)
     return (
@@ -64,7 +64,7 @@ export default function App() {
   if (pill) placedOnce.current = true;
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-20 border-b border-night-700 bg-night-950/90 backdrop-blur">
+      <header className="sticky top-0 z-20 border-b border-ink-700 bg-ink-950/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-3 px-5 py-3 sm:px-8">
           <nav className="relative flex gap-1 text-[13px]">
             {pill && (
@@ -74,17 +74,17 @@ export default function App() {
                 style={{ left: pill.left, width: pill.width }}
               />
             )}
-            {(["setup", "tonight", "morning"] as Tab[]).map((t) => (
+            {(["setup", "live", "results"] as Tab[]).map((t) => (
               <button
                 key={t}
                 ref={(el) => {
                   tabRefs.current[t] = el;
                 }}
                 onClick={() => setTab(t)}
-                className={`relative z-10 rounded-full px-3.5 py-1.5 capitalize transition-colors duration-300 ${current === t ? (pill ? "text-night-950" : "bg-cream text-night-950") : "text-neutral-400 hover:text-white"}`}
+                className={`relative z-10 rounded-full px-3.5 py-1.5 capitalize transition-colors duration-300 ${current === t ? (pill ? "text-ink-950" : "bg-cream text-ink-950") : "text-neutral-400 hover:text-white"}`}
               >
                 {t}
-                {t === "tonight" && app.running && <span className="pulse-dot ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-indigo-300 align-middle" />}
+                {t === "live" && app.running && <span className="pulse-dot ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-indigo-300 align-middle" />}
               </button>
             ))}
           </nav>
@@ -94,9 +94,9 @@ export default function App() {
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-5 pb-20 pt-8 sm:px-8">
-        {current === "setup" && <SetupWizard app={app} reload={reload} goTonight={() => setTab("tonight")} />}
-        {current === "tonight" && <Tonight app={app} reload={reload} />}
-        {current === "morning" && <Morning />}
+        {current === "setup" && <SetupWizard app={app} reload={reload} goLive={() => setTab("live")} />}
+        {current === "live" && <Live app={app} reload={reload} />}
+        {current === "results" && <Results />}
       </main>
     </div>
   );

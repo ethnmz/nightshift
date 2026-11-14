@@ -1,11 +1,11 @@
-// The onboarding wizard's backend: answers → night.yaml/idea.md, and the app's HTTP API.
+// The onboarding wizard's backend: answers → relay.yaml/idea.md, and the app's HTTP API.
 import { describe, it, expect, afterAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { request } from "node:http";
 import { Setup, saveSetup, loadSetup } from "../src/setup.js";
-import { loadNight, paths } from "../src/config.js";
+import { loadConfig, paths } from "../src/config.js";
 import { serve } from "../src/server.js";
 import { shellArgv, resolveCli } from "../src/platform.js";
 import { makeTeam } from "./helpers.js";
@@ -22,12 +22,12 @@ const answers = () =>
     rules: { perComputer: 3, usageCap: 10, review: true, stealing: false, contractsOwner: "", check: "npm test" },
   });
 
-describe("setup answers become the night's config", () => {
+describe("setup answers become the run's config", () => {
   it("any team size, roles → lanes, per-teammate agents, plain rules → pre-authorizations", () => {
     const team = makeTeam({ tasks: [] });
     const root = team.clones.ethan;
     saveSetup(root, answers());
-    const cfg = loadNight(root);
+    const cfg = loadConfig(root);
     expect(cfg.nodes.map((n) => [n.id, n.lanes, n.agent])).toEqual([
       ["ethan-meza", ["frontend", "design-demo"], "claude"],
       ["sam", ["backend"], "codex"],
@@ -44,14 +44,14 @@ describe("setup answers become the night's config", () => {
     expect(idea).toContain("first responders");
     expect(idea).toContain("Sam: backend · windows · Codex");
     expect(loadSetup(root).team[1].id).toBe("sam");
-    expect(readFileSync(join(root, ".gitignore"), "utf8")).toContain(".nightshift/local/");
+    expect(readFileSync(join(root, ".gitignore"), "utf8")).toContain(".relay/local/");
   });
 
   it("re-saving keeps hand-edited advanced settings and the board issue", () => {
-    const team = makeTeam({ tasks: [], night: { board: { kind: "github", repo: "o/r", issue: 7 }, gate: { command: "make e2e", every: 2 } } });
+    const team = makeTeam({ tasks: [], config: { board: { kind: "github", repo: "o/r", issue: 7 }, gate: { command: "make e2e", every: 2 } } });
     const root = team.clones.ethan;
     saveSetup(root, answers());
-    const cfg = loadNight(root);
+    const cfg = loadConfig(root);
     expect(cfg.board).toEqual({ kind: "github", repo: "o/r", issue: 7 });
     expect(cfg.gate).toEqual({ command: "make e2e", every: 2 });
   });

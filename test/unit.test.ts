@@ -4,8 +4,8 @@ import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { decide, commandWords, neverHang, NEVER_TOOLS } from "../src/agents/policy.js";
 import { globsOverlap, leaseViolations, leasesOverlap, staticPrefix } from "../src/lease.js";
-import { pickNext, readiness, nightFinished } from "../src/scheduler.js";
-import { NightConfig, validateTasks, missingAuthorizations, nightName, DEFAULT_ALLOW, Task } from "../src/config.js";
+import { pickNext, readiness, runFinished } from "../src/scheduler.js";
+import { RelayConfig, validateTasks, missingAuthorizations, runName, newRunId, DEFAULT_ALLOW, Task } from "../src/config.js";
 import { Claims } from "../src/claims.js";
 import { Git } from "../src/git.js";
 import { run, sh } from "../src/exec.js";
@@ -29,13 +29,13 @@ describe("policy never asks", () => {
   it("blocks human-only tools", () => {
     for (const t of NEVER_TOOLS) expect(decide(t, {}, ctx).allow).toBe(false);
   });
-  it("writes only inside the worktree, never .git/.nightshift/.env", () => {
+  it("writes only inside the worktree, never .git/.relay/.env", () => {
     expect(decide("Write", { file_path: "/w/T1/src/a.ts" }, ctx).allow).toBe(true);
     expect(decide("Edit", { file_path: "src/a.ts" }, ctx).allow).toBe(true);
     expect(decide("Write", { file_path: "/w/T2/src/a.ts" }, ctx).allow).toBe(false);
     expect(decide("Write", { file_path: "/w/T1/../T2/a.ts" }, ctx).allow).toBe(false);
     expect(decide("Write", { file_path: "/w/T1/.git/config" }, ctx).allow).toBe(false);
-    expect(decide("Write", { file_path: "/w/T1/.nightshift/tasks.yaml" }, ctx).allow).toBe(false);
+    expect(decide("Write", { file_path: "/w/T1/.relay/tasks.yaml" }, ctx).allow).toBe(false);
     expect(decide("Write", { file_path: "/w/T1/backend/.env" }, ctx).allow).toBe(false);
     expect(decide("Write", { file_path: "/w/T1/.env.example" }, ctx).allow).toBe(true);
     expect(decide("Write", { file_path: "/w/T1/a.ts" }, { ...ctx, readOnly: true }).allow).toBe(false);
@@ -103,17 +103,17 @@ describe("leases", () => {
     expect(leasesOverlap(["a/**", "b/x.ts"], ["c/**", "b/*.ts"])).toBe(true);
   });
   it("violations", () => {
-    expect(leaseViolations(["web/a.ts", "core/b.ts", ".nightshift/x"], ["web/**"])).toEqual(["core/b.ts", ".nightshift/x"]);
+    expect(leaseViolations(["web/a.ts", "core/b.ts", ".relay/x"], ["web/**"])).toEqual(["core/b.ts", ".relay/x"]);
   });
 });
 
-const cfg = NightConfig.parse({
+const cfg = RelayConfig.parse({
   board: { kind: "file", path: "b" },
   nodes: [
     { id: "a", name: "A", lanes: ["web"] },
     { id: "b", name: "B", lanes: ["core"] },
   ],
-  authorize: { board_posts: true, merge_to_night_branch: true, work_stealing: true, contract_changes: true, decide_with_assumptions: true },
+  authorize: { board_posts: true, merge_to_run_branch: true, work_stealing: true, contract_changes: true, decide_with_assumptions: true },
   steal: { idle_seconds: 0 },
 });
 const T = (id: string, lane: string, lease: string[], deps: string[] = [], role: Task["role"] = "builder"): Task =>
@@ -154,10 +154,10 @@ describe("scheduler", () => {
     expect(pickNext({ ...base, tasks: ts, states: s, me: cfg.nodes[0], idleMs: 0 })?.task.id).not.toBe("W1");
     expect(pickNext({ ...base, tasks: ts, states: new Map(), me: cfg.nodes[1] })?.task.id).toBe("FIX");
   });
-  it("blocked tasks end the night instead of waiting forever", () => {
+  it("blocked tasks end the run instead of waiting forever", () => {
     const r = readiness(tasks, new Map([["S", st("parked")]]), () => false);
     expect(r.get("W1")).toBe("blocked");
-    expect(nightFinished(r)).toBe(true);
+    expect(runFinished(r)).toBe(true);
   });
 });
 
@@ -166,12 +166,15 @@ describe("config", () => {
     expect(() => validateTasks([T("A", "x", ["a"], ["B"]), T("B", "x", ["b"], ["A"])])).toThrow(/cycle/);
     expect(() => validateTasks([T("A", "x", ["a"], ["Z"])])).toThrow(/unknown/);
   });
-  it("every authorization must be granted in the evening", () => {
+  it("every authorization must be granted before a run", () => {
     expect(missingAuthorizations({ ...cfg, authorize: { ...cfg.authorize, work_stealing: false } })).toEqual(["work_stealing"]);
   });
-  it("a night that starts after midnight belongs to the evening before", () => {
-    expect(nightName(cfg, new Date(2026, 10, 12, 2, 0))).toBe("2026-11-11");
-    expect(nightName(cfg, new Date(2026, 10, 11, 22, 0))).toBe("2026-11-11");
+  it("the run comes from relay.yaml, whatever the time of day", () => {
+    const shared = { ...cfg, run_id: "2026-11-11-1930" };
+    expect(runName(shared, new Date(2026, 10, 12, 2, 0))).toBe("2026-11-11-1930");
+    expect(runName(shared, new Date(2026, 10, 11, 14, 0))).toBe("2026-11-11-1930");
+    expect(runName({ ...cfg, run_id: "auto" }, new Date(2026, 10, 12, 2, 0))).toBe("2026-11-12");
+    expect(newRunId(new Date(2026, 10, 14, 9, 5))).toBe("2026-11-14-0905");
   });
 });
 
@@ -222,17 +225,17 @@ describe("nothing waits for a human", () => {
 describe("board envelopes", () => {
   it("round-trips and routes", () => {
     const env = { v: 1 as const, from: "ethan", to: "lane:core", type: "ask" as const, task: "T1", body: { question: "x" }, at: 1 };
-    const text = formatPost("[Ethan's Nightshift] hi", env);
-    expect(text.startsWith("[Ethan's Nightshift]")).toBe(true);
+    const text = formatPost("[Ethan's Relay] hi", env);
+    expect(text.startsWith("[Ethan's Relay]")).toBe(true);
     expect(parseEnvelope(text)).toMatchObject(env);
     expect(parseEnvelope("plain human text")).toBeUndefined();
     expect(addressedTo(env, { node: "x", lane: "core" })).toBe(true);
     expect(addressedTo(env, { node: "x", lane: "web" })).toBe(false);
   });
   it("stop text", () => {
-    expect(isStopText("nightshift stop")).toBe(true);
-    expect(isStopText("[Ethan's Claude] nightshift stop please")).toBe(true);
-    expect(isStopText("do not nightshift stop")).toBe(false);
+    expect(isStopText("relay stop")).toBe(true);
+    expect(isStopText("[Ethan's Claude] relay stop please")).toBe(true);
+    expect(isStopText("do not relay stop")).toBe(false);
   });
 });
 

@@ -1,16 +1,16 @@
 // Structured board messages. Each post is one readable line for humans plus a fenced
 // JSON envelope for agents, so routing never depends on parsing prose.
 //
-//   [Ethan's Nightshift] T3 merged: Shift A create screen (a1b2c3d)
+//   [Ethan's Relay] T3 merged: Shift A create screen (a1b2c3d)
 //
-//   ```nightshift
+//   ```relay
 //   {"v":1,"from":"ethan","to":"*","type":"task_done","task":"T3","body":{...},"at":1731300000000}
 //   ```
 import { z } from "zod";
 
 export const EnvelopeType = z.enum([
   "ready", // a teammate's computer passed its checks
-  "go", // "start the night for everyone"
+  "go", // "start the run for everyone"
   "node_up",
   "node_down",
   "note",
@@ -30,7 +30,7 @@ export const EnvelopeType = z.enum([
   "budget",
   "stop",
   "alert", // a real problem; the human line @mentions the lead so GitHub notifies their phone
-  "reserve", // day shift: path globs humans are working on (agents keep out)
+  "reserve", // path globs humans are working on (agents keep out)
 ]);
 export type EnvelopeType = z.infer<typeof EnvelopeType>;
 
@@ -43,7 +43,7 @@ export const Envelope = z.object({
   task: z.string().optional(),
   body: z.record(z.string(), z.unknown()).prefault({}),
   at: z.number(),
-  night: z.string().optional(),
+  runId: z.string().optional(),
 });
 export type Envelope = z.infer<typeof Envelope>;
 
@@ -56,10 +56,10 @@ export interface BoardMessage {
   env?: Envelope; // parsed envelope, if any
 }
 
-const FENCE = /```nightshift\s*\n([\s\S]*?)\n```/;
+const FENCE = /```relay\s*\n([\s\S]*?)\n```/;
 
 export function formatPost(human: string, env: Envelope): string {
-  return `${human}\n\n\`\`\`nightshift\n${JSON.stringify(env)}\n\`\`\``;
+  return `${human}\n\n\`\`\`relay\n${JSON.stringify(env)}\n\`\`\``;
 }
 
 export function parseEnvelope(text: string): Envelope | undefined {
@@ -73,9 +73,9 @@ export function parseEnvelope(text: string): Envelope | undefined {
   }
 }
 
-/** A human (or anyone) can halt the night by posting a line that starts with "nightshift stop". */
+/** A human (or anyone) can halt the run by posting a line that starts with "relay stop". */
 export function isStopText(text: string): boolean {
-  return /^\s*(\[[^\]]*\]\s*)?nightshift\s+stop\b/im.test(text);
+  return /^\s*(\[[^\]]*\]\s*)?relay\s+stop\b/im.test(text);
 }
 
 /** Does this envelope concern a worker running `task` in `lane` on `node`? */
@@ -89,5 +89,5 @@ export function addressedTo(env: Envelope, t: { node: string; lane?: string; tas
 
 /** The human line that goes first in every post, keeping the old `[<human>'s <agent>]` rule. */
 export function humanLine(nodeName: string, text: string): string {
-  return `[${nodeName}'s Nightshift] ${text}`.slice(0, 600);
+  return `[${nodeName}'s Relay] ${text}`.slice(0, 600);
 }

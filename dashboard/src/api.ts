@@ -25,7 +25,7 @@ export interface AppState {
   me: string | null;
   setup: SetupData | null;
   board: { kind: string; issue: number | null; repo: string | null } | null;
-  night: string | null;
+  runId: string | null;
   running: number | null;
   live: boolean;
   autoStart: boolean;
@@ -75,7 +75,7 @@ export interface Envelope {
   task?: string;
   body: Record<string, unknown>;
   at: number;
-  night?: string;
+  runId?: string;
 }
 export interface BoardRow {
   id: string;
@@ -110,7 +110,7 @@ export interface NodeSpec {
 export interface Snapshot {
   node: NodeSpec;
   nodes: NodeSpec[];
-  night: string;
+  runId: string;
   branch: string;
   project: string;
   stopped: boolean;
@@ -122,7 +122,6 @@ export interface Snapshot {
   auth: "subscription" | "api_key";
   pausedUntil: number;
   authLost?: boolean;
-  day?: boolean;
   reserves?: Record<string, string[]>;
   cutoffAt?: number | null;
   deadline?: string | null;
@@ -169,7 +168,7 @@ export const api = {
   onboarding: () => req<{ repo: string; prompts: { id: string; name: string; os: OS; agent: Agent; markdown: string }[] }>("/api/onboarding"),
   preflight: (live: boolean) => req<{ checks: Check[]; ok: boolean; posted: boolean }>(`/api/preflight?live=${live ? 1 : 0}`, { method: "POST" }),
   autostart: (on: boolean) => post("/api/autostart", { on }),
-  start: (everyone: boolean, day = false) => post("/api/start", { everyone, day }),
+  start: (everyone: boolean, again = false) => post("/api/start", { everyone, again }),
   reserve: (globs: string[]) => post<{ globs: string[] }>("/api/reserve", { globs }),
   retry: (task: string, hint: string) => post<{ id: string }>("/api/retry", { task, hint }),
   draftSubmission: () => post<{ markdown: string; sections: { title: string; body: string }[] }>("/api/submission"),

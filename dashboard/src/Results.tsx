@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, Snapshot } from "./api";
 import { Button, Card, Copy, Input, Note, Skeleton, Title } from "./ui";
 
-export function Morning() {
+export function Results() {
   const [md, setMd] = useState<string | null>(null);
   const [err, setErr] = useState("");
   const [pr, setPr] = useState<{ ok: boolean; t: string } | null>(null);
@@ -14,7 +14,7 @@ export function Morning() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1">
-          <Title tag="Morning report" title="Good morning" sub="Everything the agents did, built from git and the team board. Read the decisions first, then open the pull request." />
+          <Title tag="Results" title="What the agents built" sub="Everything from this run, built from git and the team board. Read the decisions first, then open the pull request." />
         </div>
         <Button
           busy={busy}
@@ -62,7 +62,7 @@ export function Morning() {
 function inline(s: string): ReactNode[] {
   return s.split(/(\*\*[^*]+\*\*|`[^`]+`|_[^_]+_)/g).map((p, i) => {
     if (p.startsWith("**")) return <strong key={i} className="font-medium text-cream">{p.slice(2, -2)}</strong>;
-    if (p.startsWith("`")) return <code key={i} className="rounded-sm bg-night-800 px-1 font-mono text-[12px] text-cream">{p.slice(1, -1)}</code>;
+    if (p.startsWith("`")) return <code key={i} className="rounded-sm bg-ink-800 px-1 font-mono text-[12px] text-cream">{p.slice(1, -1)}</code>;
     if (p.startsWith("_") && p.endsWith("_") && p.length > 2) return <em key={i} className="text-neutral-400">{p.slice(1, -1)}</em>;
     return p;
   });
@@ -76,7 +76,7 @@ function renderMarkdown(md: string): ReactNode[] {
     if (l.startsWith("```")) {
       const buf: string[] = [];
       while (++i < lines.length && !lines[i].startsWith("```")) buf.push(lines[i]);
-      out.push(<pre key={i} className="my-3 overflow-auto rounded-md bg-night-950 p-3 font-mono text-xs text-neutral-300">{buf.join("\n")}</pre>);
+      out.push(<pre key={i} className="my-3 overflow-auto rounded-md bg-ink-950 p-3 font-mono text-xs text-neutral-300">{buf.join("\n")}</pre>);
     } else if (l.startsWith("|")) {
       const rows: string[][] = [];
       while (i < lines.length && lines[i].startsWith("|")) {
@@ -93,7 +93,7 @@ function renderMarkdown(md: string): ReactNode[] {
             </thead>
             <tbody>
               {body.map((r, k) => (
-                <tr key={k} className="border-b border-night-700">
+                <tr key={k} className="border-b border-ink-700">
                   {r.map((c, j) => <td key={j} className="px-2 py-1.5 align-top text-neutral-300">{inline(c)}</td>)}
                 </tr>
               ))}
@@ -102,7 +102,7 @@ function renderMarkdown(md: string): ReactNode[] {
         </div>,
       );
     } else if (l.startsWith("# ")) out.push(<h1 key={i} className="mb-3 text-2xl font-light text-cream">{inline(l.slice(2))}</h1>);
-    else if (l.startsWith("## ")) out.push(<h2 key={i} className="mb-2 mt-8 border-t border-night-700 pt-6 text-lg font-light text-cream">{inline(l.slice(3))}</h2>);
+    else if (l.startsWith("## ")) out.push(<h2 key={i} className="mb-2 mt-8 border-t border-ink-700 pt-6 text-lg font-light text-cream">{inline(l.slice(3))}</h2>);
     else if (l.startsWith("> ")) out.push(<blockquote key={i} className="my-3 border-l-2 border-copper pl-3 text-cream">{inline(l.slice(2))}</blockquote>);
     else if (/^\s*- /.test(l)) out.push(<div key={i} className={`my-1 text-sm text-neutral-300 ${l.startsWith("  ") ? "ml-8" : "ml-2"}`}>• {inline(l.replace(/^\s*- /, ""))}</div>);
     else if (l.trim()) out.push(<p key={i} className="my-2 text-sm text-neutral-300">{inline(l)}</p>);
@@ -141,8 +141,8 @@ function SubmissionKit() {
       {draft && (
         <div className="space-y-3">
           {draft.sections.map((s) => (
-            <div key={s.title} className="rounded-md border border-night-700">
-              <div className="flex items-center justify-between border-b border-night-700 px-4 py-2">
+            <div key={s.title} className="rounded-md border border-ink-700">
+              <div className="flex items-center justify-between border-b border-ink-700 px-4 py-2">
                 <span className="text-sm text-cream">{s.title}</span>
                 <Copy text={s.body} />
               </div>
@@ -156,7 +156,7 @@ function SubmissionKit() {
               onClick={async () => {
                 try {
                   const r = await api.commitSubmission(draft.markdown);
-                  setMsg({ ok: true, t: r.sha === "unchanged" ? "SUBMISSION.md is already up to date." : "Added SUBMISSION.md to the night branch; it is part of the pull request." });
+                  setMsg({ ok: true, t: r.sha === "unchanged" ? "SUBMISSION.md is already up to date." : "Added SUBMISSION.md to the run branch; it is part of the pull request." });
                 } catch (e) {
                   setMsg({ ok: false, t: String((e as Error).message) });
                 }
@@ -172,7 +172,7 @@ function SubmissionKit() {
   );
 }
 
-/** Set-aside tasks: retry with a hint (runs in the next day shift or night). */
+/** Set-aside tasks: retry with a hint (runs the next time the run is going). */
 function Retries() {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [hints, setHints] = useState<Record<string, string>>({});
@@ -185,11 +185,11 @@ function Retries() {
   return (
     <Card className="space-y-3">
       <div>
-        <div className="text-lg font-light text-cream">Set aside overnight</div>
-        <p className="text-sm text-neutral-400">Add a hint and retry. Retries run in the next day shift (Tonight tab) or the next night.</p>
+        <div className="text-lg font-light text-cream">Set aside during the run</div>
+        <p className="text-sm text-neutral-400">Add a hint and retry. A retry starts as soon as the run is going; if it has finished, start it again on the Live tab.</p>
       </div>
       {parked.map((t) => (
-        <div key={t.id} className="space-y-2 rounded-md border border-night-700 p-3">
+        <div key={t.id} className="space-y-2 rounded-md border border-ink-700 p-3">
           <div className="text-sm text-cream">
             {t.id} · {t.title}
           </div>
@@ -204,7 +204,7 @@ function Retries() {
                 onClick={async () => {
                   try {
                     const r = await api.retry(t.id, hints[t.id] ?? "");
-                    setDone({ ...done, [t.id]: `Queued as ${r.id}. Start a day shift on the Tonight tab to run it now.` });
+                    setDone({ ...done, [t.id]: `Queued as ${r.id}. If the run has finished, start it again on the Live tab.` });
                   } catch (e) {
                     setDone({ ...done, [t.id]: String((e as Error).message) });
                   }

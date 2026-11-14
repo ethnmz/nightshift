@@ -1,5 +1,5 @@
 // Task state shared by every node, stored as git refs on the team remote:
-//   refs/nightshift/<night>/state/<task>
+//   refs/relay/<run>/state/<task>
 // Each ref points at a tiny commit (empty tree) whose subject is a JSON TaskState.
 // Every transition is a compare-and-swap push (--force-with-lease=<ref>:<expected>),
 // so two nodes racing for the same task cannot both win. No server, no leader.
@@ -13,7 +13,7 @@ export interface TaskState {
   at: number; // ms since epoch, set by the writer
   attempt: number;
   note?: string;
-  merge?: string; // night-branch commit for done tasks
+  merge?: string; // run-branch commit for done tasks
   since?: number; // when this claim started
 }
 
@@ -24,17 +24,17 @@ export interface StateRef {
 }
 
 export class Claims {
-  constructor(private git: Git, private remote: string, private night: string, private now: () => number = Date.now) {}
+  constructor(private git: Git, private remote: string, private runId: string, private now: () => number = Date.now) {}
 
   ref(task: string) {
-    return `refs/nightshift/${this.night}/state/${task}`;
+    return `refs/relay/${this.runId}/state/${task}`;
   }
   private mirror(task = "") {
-    return `refs/nightshift-remote/${this.night}/state/${task}`;
+    return `refs/relay-remote/${this.runId}/state/${task}`;
   }
 
   /**
-   * Another process in the same checkout (the app, a day shift) may fetch the same refs at the
+   * Another process in the same checkout (the app, a restarted node) may fetch the same refs at the
    * same moment; git then refuses one update ("incorrect old value"). Retry briefly.
    */
   private async fetchRetry(args: string[]) {
@@ -48,7 +48,7 @@ export class Claims {
 
   /** Fetch every state ref from the remote and return them by task id. */
   async list(): Promise<Map<string, StateRef>> {
-    const spec = `+refs/nightshift/${this.night}/state/*:${this.mirror()}*`;
+    const spec = `+refs/relay/${this.runId}/state/*:${this.mirror()}*`;
     const f = await this.fetchRetry(["fetch", "--quiet", "--prune", "--no-tags", this.remote, spec]);
     if (f.code !== 0) throw new Error(`fetch state refs: ${f.stderr.trim()}`);
     const out = await this.git.ok(["for-each-ref", "--format=%(refname)%00%(objectname)%00%(contents:subject)", this.mirror()]);
@@ -93,18 +93,18 @@ export class Claims {
     return this.write(task, expected, { ...state, at: state.at ?? this.now() } as TaskState);
   }
 
-  /** Dynamic tasks (gate fixers, contract changes) added during the night, shared like states. */
+  /** Dynamic tasks (gate fixers, contract changes) added during the run, shared like states. */
   async addTask(task: object & { id: string }): Promise<boolean> {
     const tree = await this.git.emptyTree();
     const sha = await this.git.ok(["commit-tree", tree, "-m", JSON.stringify(task)]);
-    const ref = `refs/nightshift/${this.night}/tasks/${task.id}`;
+    const ref = `refs/relay/${this.runId}/tasks/${task.id}`;
     const r = await this.git.raw(["push", "--quiet", `--force-with-lease=${ref}:`, this.remote, `${sha}:${ref}`]);
     return r.code === 0;
   }
 
   async listTasks(): Promise<unknown[]> {
-    const mirror = `refs/nightshift-remote/${this.night}/tasks/`;
-    const f = await this.fetchRetry(["fetch", "--quiet", "--prune", "--no-tags", this.remote, `+refs/nightshift/${this.night}/tasks/*:${mirror}*`]);
+    const mirror = `refs/relay-remote/${this.runId}/tasks/`;
+    const f = await this.fetchRetry(["fetch", "--quiet", "--prune", "--no-tags", this.remote, `+refs/relay/${this.runId}/tasks/*:${mirror}*`]);
     if (f.code !== 0) throw new Error(`fetch task refs: ${f.stderr.trim()}`);
     const out = await this.git.ok(["for-each-ref", "--format=%(contents:subject)", mirror]);
     return out

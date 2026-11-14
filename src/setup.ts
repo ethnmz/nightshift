@@ -1,11 +1,11 @@
-// The onboarding wizard's data model. The UI edits `.nightshift/setup.json` (plain answers:
-// hackathon context, team, rules); this module turns it into the files the night runs on:
-// `.nightshift/idea.md` (for the planner and every agent) and `.nightshift/night.yaml`.
+// The onboarding wizard's data model. The UI edits `.relay/setup.json` (plain answers:
+// hackathon context, team, rules); this module turns it into the files the run runs on:
+// `.relay/idea.md` (for the planner and every agent) and `.relay/relay.yaml`.
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import YAML from "yaml";
 import { z } from "zod";
-import { paths, NightConfig } from "./config.js";
+import { paths, RelayConfig } from "./config.js";
 
 export const Member = z.object({
   id: z.string().default(""), // stable slug, e.g. "ethan"; generated from the name on save
@@ -43,7 +43,7 @@ export const Setup = z.object({
   rules: z
     .object({
       perComputer: z.number().int().min(1).max(6).default(2),
-      usageCap: z.number().positive().default(25), // estimated $ per computer per night
+      usageCap: z.number().positive().default(25), // estimated $ per computer per run
       review: z.boolean().default(true),
       stealing: z.boolean().default(true),
       contractsOwner: z.string().default(""), // member id who applies contract changes
@@ -100,8 +100,8 @@ export function ideaMarkdown(s: Setup): string {
     .join("\n");
 }
 
-/** Build night.yaml from the wizard answers, keeping advanced fields someone edited by hand. */
-export function nightYaml(s: Setup, root: string, existing?: Partial<NightConfig>): Record<string, unknown> {
+/** Build relay.yaml from the wizard answers, keeping advanced fields someone edited by hand. */
+export function configYaml(s: Setup, root: string, existing?: Partial<RelayConfig>): Record<string, unknown> {
   const nodes = s.team.map((m) => ({
     id: m.id,
     name: m.name,
@@ -118,15 +118,15 @@ export function nightYaml(s: Setup, root: string, existing?: Partial<NightConfig
     ...(existing ?? {}),
     version: 1,
     project: slug(s.event.name || root.split(/[\\/]/).pop() || "project"),
-    night: existing?.night ?? "auto",
+    run_id: existing?.run_id ?? "auto",
     base_branch: existing?.base_branch ?? "main",
     remote: existing?.remote ?? "origin",
     board,
     nodes,
-    // The wizard's "Overnight rules" step is where the team grants these in plain words.
+    // The wizard's "Rules" step is where the team grants these in plain words.
     authorize: {
       board_posts: true,
-      merge_to_night_branch: true,
+      merge_to_run_branch: true,
       work_stealing: s.rules.stealing,
       contract_changes: true,
       decide_with_assumptions: true,
@@ -146,7 +146,7 @@ export function nightYaml(s: Setup, root: string, existing?: Partial<NightConfig
   };
 }
 
-export function saveSetup(root: string, s: Setup): { night: string; idea: string } {
+export function saveSetup(root: string, s: Setup): { config: string; idea: string } {
   const p = paths(root);
   mkdirSync(p.dir, { recursive: true });
   // Give every member a unique id.
@@ -172,32 +172,32 @@ export function saveSetup(root: string, s: Setup): { night: string; idea: string
     if (text) idea += `\n## The team's original brief\n\n${text.slice(0, 40_000)}\n`;
   }
   writeFileSync(p.idea, idea);
-  const existing = existsSync(p.night) ? (YAML.parse(readFileSync(p.night, "utf8")) as Partial<NightConfig>) : undefined;
-  const night = YAML.stringify(nightYaml(s, root, existing));
-  writeFileSync(p.night, night);
+  const existing = existsSync(p.config) ? (YAML.parse(readFileSync(p.config, "utf8")) as Partial<RelayConfig>) : undefined;
+  const config = YAML.stringify(configYaml(s, root, existing));
+  writeFileSync(p.config, config);
   if (!existsSync(p.tasks)) writeFileSync(p.tasks, "tasks: []\n");
   const gi = join(root, ".gitignore");
-  if (!existsSync(gi) || !readFileSync(gi, "utf8").includes(".nightshift/local/")) appendFileSync(gi, "\n.nightshift/local/\n");
-  return { night, idea };
+  if (!existsSync(gi) || !readFileSync(gi, "utf8").includes(".relay/local/")) appendFileSync(gi, "\n.relay/local/\n");
+  return { config, idea };
 }
 
 /** After planning: adopt the planner's suggested check/gate if the team did not set one. */
 export function adoptPlannerChecks(root: string) {
   const p = paths(root);
   const tf = YAML.parse(readFileSync(p.tasks, "utf8")) ?? {};
-  const night = YAML.parse(readFileSync(p.night, "utf8")) ?? {};
+  const doc = YAML.parse(readFileSync(p.config, "utf8")) ?? {};
   let changed = false;
-  if (!night.check && typeof tf.check === "string") {
-    night.check = tf.check;
+  if (!doc.check && typeof tf.check === "string") {
+    doc.check = tf.check;
     changed = true;
   }
-  if (!night.gate && tf.gate?.command) {
-    night.gate = { command: String(tf.gate.command), every: Number(tf.gate.every ?? 3) };
+  if (!doc.gate && tf.gate?.command) {
+    doc.gate = { command: String(tf.gate.command), every: Number(tf.gate.every ?? 3) };
     changed = true;
   }
-  if (Array.isArray(tf.contracts) && !(night.contracts ?? []).length) {
-    night.contracts = tf.contracts;
+  if (Array.isArray(tf.contracts) && !(doc.contracts ?? []).length) {
+    doc.contracts = tf.contracts;
     changed = true;
   }
-  if (changed) writeFileSync(p.night, YAML.stringify(night));
+  if (changed) writeFileSync(p.config, YAML.stringify(doc));
 }

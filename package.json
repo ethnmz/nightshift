@@ -1,21 +1,21 @@
 {
-  "name": "nightshift",
+  "name": "relay",
   "version": "0.1.0",
   "private": true,
-  "description": "Overnight, hands-off multi-agent builder for 4-person hackathon teams",
+  "description": "Hands-off multi-agent builder for hackathon teams: every teammate's coding agent works together, any time of day",
   "type": "module",
   "bin": {
-    "nightshift": "bin/nightshift.mjs"
+    "relay": "bin/relay.mjs"
   },
   "workspaces": [
     "dashboard"
   ],
   "scripts": {
-    "start": "node bin/nightshift.mjs ui",
+    "start": "node bin/relay.mjs ui",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build:dashboard": "npm --workspace dashboard run build",
-    "nightshift": "tsx src/cli.ts"
+    "relay": "tsx src/cli.ts"
   },
   "engines": {
     "node": ">=20"

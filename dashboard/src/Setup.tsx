@@ -14,7 +14,7 @@ const STEPS = [
 type StepId = (typeof STEPS)[number]["id"];
 
 const ROLE_IDEAS = ["frontend", "backend", "AI", "data", "mobile", "design & demo", "infra"];
-const NIGHTSHIFT_REPO = "https://github.com/ethnmz/nightshift";
+const RELAY_REPO = "https://github.com/ethnmz/relay";
 
 function firstStep(app: AppState): StepId {
   if (!app.project?.hasSetup) return "event";
@@ -24,7 +24,7 @@ function firstStep(app: AppState): StepId {
   return "start";
 }
 
-export function SetupWizard({ app, reload, goTonight }: { app: AppState; reload: () => Promise<AppState | null>; goTonight: () => void }) {
+export function SetupWizard({ app, reload, goLive }: { app: AppState; reload: () => Promise<AppState | null>; goLive: () => void }) {
   const [step, setStep] = useState<StepId>(() => firstStep(app));
   const [s, setS] = useState<SetupData>(() => structuredClone(app.setup && app.project?.hasSetup ? app.setup : EMPTY_SETUP));
   const [saving, setSaving] = useState(false);
@@ -76,7 +76,7 @@ export function SetupWizard({ app, reload, goTonight }: { app: AppState; reload:
           {step === "plan" && <PlanStep app={app} s={s} />}
           {step === "share" && <ShareStep app={app} s={s} reload={reload} />}
           {step === "computer" && <ComputerStep app={app} s={s} reload={reload} />}
-          {step === "start" && <StartStep app={app} reload={reload} goTonight={goTonight} />}
+          {step === "start" && <StartStep app={app} reload={reload} goLive={goLive} />}
         </div>
       </StepCtx.Provider>
       {err && (
@@ -86,10 +86,10 @@ export function SetupWizard({ app, reload, goTonight }: { app: AppState; reload:
       )}
 
       {/* Bottom bar: progress, Back, Next (Upwork-style) */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-night-700 bg-night-950/90 backdrop-blur-md">
-        <div className="flex h-1 w-full gap-[3px] bg-night-950" role="progressbar" aria-valuemin={1} aria-valuemax={STEPS.length} aria-valuenow={idx + 1} aria-label="Setup progress">
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-ink-700 bg-ink-950/90 backdrop-blur-md">
+        <div className="flex h-1 w-full gap-[3px] bg-ink-950" role="progressbar" aria-valuemin={1} aria-valuemax={STEPS.length} aria-valuenow={idx + 1} aria-label="Setup progress">
           {STEPS.map((x, i) => (
-            <button key={x.id} onClick={() => go(x.id)} title={`${i + 1}. ${x.label}`} aria-label={`Go to step ${i + 1}: ${x.label}`} className="group relative h-full flex-1 bg-night-700">
+            <button key={x.id} onClick={() => go(x.id)} title={`${i + 1}. ${x.label}`} aria-label={`Go to step ${i + 1}: ${x.label}`} className="group relative h-full flex-1 bg-ink-700">
               <span className={`absolute inset-y-0 left-0 bg-copper transition-[width] duration-500 ease-out ${i < idx ? "w-full" : i === idx ? "w-1/2" : "w-0"}`} />
               <span className="absolute inset-0 bg-cream/0 transition-colors group-hover:bg-cream/25" />
             </button>
@@ -177,7 +177,7 @@ function EventStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) 
   );
 }
 
-/** Drop a markdown brief; Nightshift fills in the whole setup (event, idea, team, rules). */
+/** Drop a markdown brief; Relay fills in the whole setup (event, idea, team, rules). */
 function BriefUpload({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) {
   const [busy, setBusy] = useState(false);
   const [ai, setAi] = useState(true);
@@ -206,7 +206,7 @@ function BriefUpload({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }
   };
   return (
     <Card className="space-y-4">
-      <Title tag="Fastest way" title="Start from your brief" sub="Write your hackathon notes in one markdown file (event, challenge, idea, demo, team, rules), then drop it here. Nightshift fills in every step it can." />
+      <Title tag="Fastest way" title="Start from your brief" sub="Write your hackathon notes in one markdown file (event, challenge, idea, demo, team, rules), then drop it here. Relay fills in every step it can." />
       <label
         onDragOver={(e) => (e.preventDefault(), setDrag(true))}
         onDragLeave={() => setDrag(false)}
@@ -216,7 +216,7 @@ function BriefUpload({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }
           const f = e.dataTransfer.files?.[0];
           if (f) void run(f);
         }}
-        className={`copper-grid flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed px-6 py-10 text-center transition ${drag ? "border-copper bg-copper/10" : "border-night-600 hover:border-cream/50"}`}
+        className={`copper-grid flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed px-6 py-10 text-center transition ${drag ? "border-copper bg-copper/10" : "border-ink-600 hover:border-cream/50"}`}
       >
         <input type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" className="hidden" onChange={(e) => e.target.files?.[0] && void run(e.target.files[0])} />
         {busy ? (
@@ -233,7 +233,7 @@ function BriefUpload({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }
       </label>
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
         <Toggle on={ai} onChange={setAi} label="Let AI fill in what the headings don't say" hint="Uses your Claude Code subscription for one short read." />
-        <a href="/api/setup/template" className="ml-auto text-sm text-neutral-300 underline decoration-night-600 underline-offset-4 hover:text-white">
+        <a href="/api/setup/template" className="ml-auto text-sm text-neutral-300 underline decoration-ink-600 underline-offset-4 hover:text-white">
           Download the brief template
         </a>
       </div>
@@ -251,12 +251,12 @@ function TeamStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) {
     if (!team.length) setS({ ...s, team: [{ id: "", name: "", github: "", os: "mac", agent: "claude", roles: "" }] });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <StepPage title="Who's on the team?" sub="Each person's computer runs their own coding agent overnight, on their own subscription.">
+    <StepPage title="Who's on the team?" sub="Each person's computer runs their own coding agent, on their own subscription, at the same time as everyone else's.">
       <div className="stagger space-y-3">
         {team.map((m, i) => (
-          <div key={i} className="rounded-md border border-night-700 bg-[#0e0e0e] p-4 transition-colors duration-200 hover:border-night-600">
+          <div key={i} className="rounded-md border border-ink-700 bg-[#0e0e0e] p-4 transition-colors duration-200 hover:border-ink-600">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-night-600 text-xs font-medium text-cream">{initials(m.name || "?")}</span>
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-ink-600 text-xs font-medium text-cream">{initials(m.name || "?")}</span>
               <Input placeholder="Name" value={m.name} onChange={(e) => set(i, { name: e.target.value })} className="min-w-0 flex-1 basis-32" />
               <button onClick={() => setS({ ...s, team: team.filter((_, j) => j !== i) })} className="order-none px-1 text-neutral-500 transition-colors hover:text-red-300 sm:order-last" title="Remove" aria-label={`Remove ${m.name || "teammate"}`}>
                 ✕
@@ -271,7 +271,7 @@ function TeamStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) {
             {!m.roles && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {ROLE_IDEAS.map((r) => (
-                  <button key={r} onClick={() => set(i, { roles: r })} className="rounded-sm border border-night-600 px-2 py-0.5 text-xs text-neutral-400 hover:border-cream/50 hover:text-cream">
+                  <button key={r} onClick={() => set(i, { roles: r })} className="rounded-sm border border-ink-600 px-2 py-0.5 text-xs text-neutral-400 hover:border-cream/50 hover:text-cream">
                     {r}
                   </button>
                 ))}
@@ -291,13 +291,13 @@ function TeamStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) {
 function RulesStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) {
   const r = (k: keyof SetupData["rules"], v: unknown) => setS({ ...s, rules: { ...s.rules, [k]: v } });
   return (
-    <StepPage title="Overnight rules" sub="Everyone will be asleep, so decide these now. Agents never ask anything during the night.">
+    <StepPage title="Agent rules" sub="Nobody has to watch a run, so decide these now. Agents never ask anything while they work.">
       <div className="space-y-1">
         <Toggle on={s.rules.review} onChange={(v) => r("review", v)} label="A second agent reviews every change" hint="Recommended. Catches mistakes before they merge." />
         <Toggle on={s.rules.stealing} onChange={(v) => r("stealing", v)} label="Idle computers help other teammates' areas" hint="If someone's list runs dry, they pick up waiting work from others." />
       </div>
-      <div className="rounded-md bg-[#0e0e0e] p-4 text-sm text-neutral-300 border border-night-700">
-        Always on: agents post on the team board, merge finished work into a <b className="text-white">night branch</b> (never main), and write down every decision they make for you to review in the morning.
+      <div className="rounded-md bg-[#0e0e0e] p-4 text-sm text-neutral-300 border border-ink-700">
+        Always on: agents post on the team board, merge finished work into a <b className="text-white">run branch</b> (never main), and write down every decision they make for you to review afterwards.
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Agents per computer" hint="2 is a good start">
@@ -308,7 +308,7 @@ function RulesStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) 
         </Field>
       </div>
       <Field label="Who owns shared contracts?" hint="their agent applies API/data changes others ask for">
-        <select value={s.rules.contractsOwner} onChange={(e) => r("contractsOwner", e.target.value)} className="w-full rounded-md bg-night-950 px-3.5 py-2.5 text-sm text-neutral-100 border border-night-600">
+        <select value={s.rules.contractsOwner} onChange={(e) => r("contractsOwner", e.target.value)} className="w-full rounded-md bg-ink-950 px-3.5 py-2.5 text-sm text-neutral-100 border border-ink-600">
           <option value="">{s.team[0]?.name ? `${s.team[0].name} (default)` : "First teammate"}</option>
           {s.team.map((m) => (
             <option key={m.id || m.name} value={m.id}>
@@ -317,12 +317,12 @@ function RulesStep({ s, setS }: { s: SetupData; setS: (s: SetupData) => void }) 
           ))}
         </select>
       </Field>
-      <div className="space-y-1 rounded-md border border-night-700 p-2">
+      <div className="space-y-1 rounded-md border border-ink-700 p-2">
         <Toggle
           on={s.rules.alerts ?? true}
           onChange={(v) => r("alerts", v)}
-          label="Notify me on GitHub if something goes wrong overnight"
-          hint={s.team[0]?.github ? `Mentions @${s.team[0].github} on the team board, so the GitHub app on your phone buzzes. Only for real problems, plus once when the night is finished.` : "Add your GitHub username in the Team step (first teammate) so alerts can reach you."}
+          label="Notify me on GitHub if something goes wrong during a run"
+          hint={s.team[0]?.github ? `Mentions @${s.team[0].github} on the team board, so the GitHub app on your phone buzzes. Only for real problems, plus once when the run is finished.` : "Add your GitHub username in the Team step (first teammate) so alerts can reach you."}
         />
       </div>
       <Field label="Stop starting new work before the deadline" hint={s.event.deadline ? `deadline ${s.event.deadline.replace("T", " ")}` : "set a deadline in step 1"}>
@@ -382,7 +382,7 @@ function PlanStep({ app, s }: { app: AppState; s: SetupData }) {
   const update = (id: string, patch: Partial<Task>) => tasks && setTasks(tasks.map((t) => (t.id === id ? { ...t, ...patch } : t)));
 
   return (
-    <StepPage title="Tonight's plan" sub="An AI planner turns your answers into shared contracts and small tasks for each teammate. Read it over: this is what gets built.">
+    <StepPage title="The plan" sub="An AI planner turns your answers into shared contracts and small tasks for each teammate. Read it over: this is what gets built.">
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={generate} busy={job.running}>
           {tasks?.length ? "Regenerate plan" : "Generate the plan"}
@@ -395,7 +395,7 @@ function PlanStep({ app, s }: { app: AppState; s: SetupData }) {
         )}
       </div>
       {job.running && (
-        <div className="max-h-40 overflow-auto rounded-md bg-night-950 p-3 font-mono text-xs text-neutral-400">
+        <div className="max-h-40 overflow-auto rounded-md bg-ink-950 p-3 font-mono text-xs text-neutral-400">
           {job.log.map((l, i) => (
             <div key={i}>{l}</div>
           ))}
@@ -436,7 +436,7 @@ function PlanStep({ app, s }: { app: AppState; s: SetupData }) {
                   {tasks
                     .filter((t) => t.lane === lane)
                     .map((t) => (
-                      <div key={t.id} className="rounded-md bg-[#0e0e0e] border border-night-700">
+                      <div key={t.id} className="rounded-md bg-[#0e0e0e] border border-ink-700">
                         <button onClick={() => setOpen(open === t.id ? null : t.id)} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left transition-colors duration-200 hover:bg-white/[0.03]">
                           <span className="text-[11px] font-semibold text-neutral-500">{t.id}</span>
                           <span className="flex-1 text-sm text-neutral-200">{t.title}</span>
@@ -448,13 +448,13 @@ function PlanStep({ app, s }: { app: AppState; s: SetupData }) {
                               e.stopPropagation();
                               void saveTasks(tasks.map((x) => (x.id === t.id ? { ...x, priority: x.priority === "nice" ? "must" : "nice" } : x)));
                             }}
-                            className={`rounded-sm border px-1.5 text-[10px] ${t.priority === "nice" ? "border-night-600 text-neutral-500" : "border-copper/60 text-copper"}`}
+                            className={`rounded-sm border px-1.5 text-[10px] ${t.priority === "nice" ? "border-ink-600 text-neutral-500" : "border-copper/60 text-copper"}`}
                           >
                             {t.priority === "nice" ? "nice" : "must"}
                           </span>
                         </button>
                         {open === t.id && (
-                          <div className="space-y-2 border-t border-night-700 p-3">
+                          <div className="space-y-2 border-t border-ink-700 p-3">
                             <Input value={t.title} onChange={(e) => update(t.id, { title: e.target.value })} />
                             <Text rows={5} value={t.brief ?? ""} onChange={(e) => update(t.id, { brief: e.target.value })} />
                             <div className="text-[11px] text-neutral-500">Can change: {t.lease.join(", ")}</div>
@@ -492,20 +492,20 @@ function SetupPrompts({ shared }: { shared: boolean }) {
   }, [shared]);
   const osName = { mac: "Mac", windows: "Windows", linux: "Linux" } as const;
   return (
-    <div className="space-y-3 border-t border-night-700 pt-5">
+    <div className="space-y-3 border-t border-ink-700 pt-5">
       <div>
         <div className="text-lg font-light text-cream">Setup prompts for each teammate</div>
         <p className="mt-1 text-sm text-neutral-400">
-          Send each person their file. They open Claude Code or Codex on their own computer, paste it in, and their AI does the whole setup: checks tools, installs Nightshift, joins this project, runs the final check, and leaves the computer ready to start when you do. They only type their own logins.
+          Send each person their file. They open Claude Code or Codex on their own computer, paste it in, and their AI does the whole setup: checks tools, installs Relay, joins this project, runs the final check, and leaves the computer ready to start when you do. They only type their own logins.
         </p>
       </div>
       {!shared && <Note kind="warn">Share the plan first, so teammates can clone the project and the team board exists.</Note>}
       {err && <Note kind="error">{err}</Note>}
-      <div className="divide-y divide-night-700 rounded-md border border-night-700">
+      <div className="divide-y divide-ink-700 rounded-md border border-ink-700">
         {data?.prompts.map((p) => (
           <div key={p.id}>
             <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-              <span className="flex h-8 w-8 items-center justify-center rounded-full border border-night-600 text-[11px] font-medium text-cream">{initials(p.name)}</span>
+              <span className="flex h-8 w-8 items-center justify-center rounded-full border border-ink-600 text-[11px] font-medium text-cream">{initials(p.name)}</span>
               <span className="flex-1 text-sm text-neutral-200">
                 {p.name} <span className="text-neutral-500">· {osName[p.os]} · {agentLabel(p.agent)}</span>
               </span>
@@ -513,16 +513,16 @@ function SetupPrompts({ shared }: { shared: boolean }) {
                 {open === p.id ? "Hide" : "Preview"}
               </button>
               <Copy text={p.markdown} label="Copy prompt" />
-              <a href={`/api/onboarding/${encodeURIComponent(p.id)}.md`} className="rounded-full border border-night-600 px-2.5 py-0.5 text-xs text-neutral-300 hover:border-cream/60">
+              <a href={`/api/onboarding/${encodeURIComponent(p.id)}.md`} className="rounded-full border border-ink-600 px-2.5 py-0.5 text-xs text-neutral-300 hover:border-cream/60">
                 Download .md
               </a>
             </div>
-            {open === p.id && <pre className="scroll-thin max-h-96 overflow-auto whitespace-pre-wrap border-t border-night-700 bg-[#0c0c0c] p-4 font-mono text-[11.5px] leading-relaxed text-neutral-300">{p.markdown}</pre>}
+            {open === p.id && <pre className="scroll-thin max-h-96 overflow-auto whitespace-pre-wrap border-t border-ink-700 bg-[#0c0c0c] p-4 font-mono text-[11.5px] leading-relaxed text-neutral-300">{p.markdown}</pre>}
           </div>
         ))}
         {data && !data.prompts.length && <div className="px-4 py-3 text-sm text-neutral-500">Add teammates in the Team step first.</div>}
       </div>
-      {shared && data && <p className="text-xs text-neutral-500">The files are also saved in the project as .nightshift/onboarding/&lt;name&gt;.md on GitHub. Teammates also need access to the Nightshift repo itself if it is private.</p>}
+      {shared && data && <p className="text-xs text-neutral-500">The files are also saved in the project as .relay/onboarding/&lt;name&gt;.md on GitHub. Teammates also need access to the Relay repo itself if it is private.</p>}
     </div>
   );
 }
@@ -546,15 +546,15 @@ function ShareStep({ app, s, reload }: { app: AppState; s: SetupData; reload: ()
     }
     setBusy(false);
   };
-  const message = `Join our Nightshift team for ${s.event.name || "the hackathon"}:
+  const message = `Join our Relay team for ${s.event.name || "the hackathon"}:
 1. Install Node.js 20+, Git, and the GitHub CLI, then sign in: gh auth login
 2. Install your agent and sign in with your subscription:
    Claude Code: npm install -g @anthropic-ai/claude-code   then run: claude   and type /login
    Codex:       npm install -g @openai/codex   then: codex login
-3. Get Nightshift:  git clone ${NIGHTSHIFT_REPO} && cd nightshift && npm install && npm start
+3. Get Relay:  git clone ${RELAY_REPO} && cd relay && npm install && npm start
 4. In the page that opens, click "Join my team" and paste: ${repoLink || "<project link>"}`;
   return (
-    <StepPage title="Share with the team" sub="This saves the plan to GitHub and creates the team's message board, where agents talk overnight.">
+    <StepPage title="Share with the team" sub="This saves the plan to GitHub and creates the team's message board, where the agents talk while they work.">
       {pre && pre.files.length > 0 && <div className="text-sm text-neutral-400">{pre.files.length} new or changed file{pre.files.length === 1 ? "" : "s"} will be pushed to {pre.repo ?? "GitHub"}.</div>}
       <Button onClick={share} busy={busy}>
         {app.board?.issue ? "Push the latest plan" : "Share the plan"}
@@ -568,7 +568,7 @@ function ShareStep({ app, s, reload }: { app: AppState; s: SetupData; reload: ()
           </a>
         </p>
       )}
-      <div className="space-y-2 border-t border-night-700 pt-5">
+      <div className="space-y-2 border-t border-ink-700 pt-5">
         <div className="text-sm font-medium text-white">Give teammates access</div>
         {s.team
           .filter((m) => m.github)
@@ -598,13 +598,13 @@ function ShareStep({ app, s, reload }: { app: AppState; s: SetupData; reload: ()
         {!s.team.some((m) => m.github) && <p className="text-sm text-neutral-500">Add GitHub usernames in the Team step to invite people from here.</p>}
       </div>
       <SetupPrompts shared={!!app.board?.issue} />
-      <details className="border-t border-night-700 pt-5">
+      <details className="border-t border-ink-700 pt-5">
         <summary className="cursor-pointer text-sm text-neutral-400 hover:text-white">Or send the manual steps instead</summary>
         <div className="mt-3 space-y-2">
           <div className="flex justify-end">
             <Copy text={message} label="Copy message" />
           </div>
-          <pre className="whitespace-pre-wrap rounded-md bg-night-950 p-4 text-xs leading-relaxed text-neutral-300">{message}</pre>
+          <pre className="whitespace-pre-wrap rounded-md bg-ink-950 p-4 text-xs leading-relaxed text-neutral-300">{message}</pre>
         </div>
       </details>
     </StepPage>
@@ -622,7 +622,7 @@ const INSTALL: Record<OS, Record<string, string>> = {
   },
   windows: {
     node: "winget install OpenJS.NodeJS.LTS",
-    git: "winget install Git.Git   (includes Git Bash, which Nightshift uses for checks)",
+    git: "winget install Git.Git   (includes Git Bash, which Relay uses for checks)",
     gh: "winget install GitHub.cli   then: gh auth login",
     claude: "npm install -g @anthropic-ai/claude-code   then run: claude   and type /login",
     codex: "npm install -g @openai/codex   then: codex login",
@@ -657,7 +657,7 @@ function ComputerStep({ app, s, reload }: { app: AppState; s: SetupData; reload:
   const ghMismatch = tools?.ghLogin && me?.github && tools.ghLogin.toLowerCase() !== me.github.toLowerCase();
 
   return (
-    <StepPage title="Set up this computer" sub="Each teammate does this on their own computer before bed.">
+    <StepPage title="Set up this computer" sub="Each teammate does this once on their own computer, before the first run.">
       <Field label="Which teammate are you?">
         <div className="flex flex-wrap gap-2">
           {s.team.map((m) => (
@@ -667,9 +667,9 @@ function ComputerStep({ app, s, reload }: { app: AppState; s: SetupData; reload:
                 await api.setMe(m.id);
                 await reload();
               }}
-              className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ring-1 transition ${app.me === m.id ? "bg-cream text-night-950 border-cream" : "bg-[#0e0e0e] text-neutral-300 ring-white/5 hover:ring-white/20"}`}
+              className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ring-1 transition ${app.me === m.id ? "bg-cream text-ink-950 border-cream" : "bg-[#0e0e0e] text-neutral-300 ring-white/5 hover:ring-white/20"}`}
             >
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-night-800 text-[10px] font-semibold">{initials(m.name)}</span>
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-ink-800 text-[10px] font-semibold">{initials(m.name)}</span>
               {m.name}
             </button>
           ))}
@@ -686,7 +686,7 @@ function ComputerStep({ app, s, reload }: { app: AppState; s: SetupData; reload:
             </div>
             {!tools && <div className="text-sm text-neutral-500">Checking…</div>}
             {items.map((it) => (
-              <div key={it.k} className="rounded-md bg-[#0e0e0e] p-3 border border-night-700">
+              <div key={it.k} className="rounded-md bg-[#0e0e0e] p-3 border border-ink-700">
                 <div className="flex items-center gap-2 text-sm">
                   <span className={it.ok ? "text-copper" : "text-amber-300"}>{it.ok ? "✓" : "○"}</span>
                   <span className="text-neutral-200">{it.label}</span>
@@ -697,8 +697,8 @@ function ComputerStep({ app, s, reload }: { app: AppState; s: SetupData; reload:
             {ghMismatch && <Note kind="warn">GitHub CLI is signed in as {tools!.ghLogin}, but the team list says {me.github}. Sign in as yourself (gh auth login) so the agents can see each other.</Note>}
             {me.os !== os && <Note kind="warn">The team list says {me.name} uses {me.os}, but this computer is {os}. That's fine. Update it in the Team step if you like.</Note>}
           </div>
-          <div className="space-y-3 border-t border-night-700 pt-5">
-            <div className="text-sm text-neutral-400">The final check catches anything that would stop the night at 3 a.m.: power, sleep, GitHub access, and a real test call to your agent.</div>
+          <div className="space-y-3 border-t border-ink-700 pt-5">
+            <div className="text-sm text-neutral-400">The final check catches anything that would stall a run while nobody is watching: power, sleep settings, GitHub access, and a real test call to your agent.</div>
             <Button
               busy={busy}
               onClick={async () => {
@@ -738,7 +738,7 @@ function ComputerStep({ app, s, reload }: { app: AppState; s: SetupData; reload:
 }
 
 // ---------- 7. Start ----------
-function StartStep({ app, reload, goTonight }: { app: AppState; reload: () => Promise<AppState | null>; goTonight: () => void }) {
+function StartStep({ app, reload, goLive }: { app: AppState; reload: () => Promise<AppState | null>; goLive: () => void }) {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -760,18 +760,18 @@ function StartStep({ app, reload, goTonight }: { app: AppState; reload: () => Pr
     try {
       await api.start(everyone);
       await reload();
-      goTonight();
+      goLive();
     } catch (e) {
       setErr(String((e as Error).message));
     }
     setBusy(false);
   };
   return (
-    <StepPage title="Start the night" sub="Leave your computer plugged in with the lid open. Nobody will be asked anything until morning.">
+    <StepPage title="Start the run" sub="Leave your computer plugged in with the lid open. Nobody will be asked anything until the run is done, so keep working or walk away.">
       <div className="grid gap-2 sm:grid-cols-2">
         {(snap?.nodes ?? []).map((n) => (
-          <div key={n.id} className="flex items-center gap-3 rounded-md bg-[#0e0e0e] px-3 py-2.5 border border-night-700">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-night-800 text-xs font-semibold">{initials(n.name)}</span>
+          <div key={n.id} className="flex items-center gap-3 rounded-md bg-[#0e0e0e] px-3 py-2.5 border border-ink-700">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-ink-800 text-xs font-semibold">{initials(n.name)}</span>
             <span className="flex-1 text-sm text-neutral-200">
               {n.name} <span className="text-neutral-500">· {agentLabel(n.agent)}</span>
             </span>
@@ -781,13 +781,13 @@ function StartStep({ app, reload, goTonight }: { app: AppState; reload: () => Pr
       </div>
       {err && <Note kind="error">{err}</Note>}
       {app.running ? (
-        <Button onClick={goTonight}>Watch tonight →</Button>
+        <Button onClick={goLive}>Watch it live →</Button>
       ) : (
         <div className="space-y-3">
           <div className="flex flex-wrap gap-2">
             {isLead && (
               <Button busy={busy} onClick={() => start(true)}>
-                Start the night for everyone
+                Start the run for everyone
               </Button>
             )}
             <Button kind={isLead ? "soft" : "primary"} busy={busy} onClick={() => start(false)}>
@@ -800,7 +800,7 @@ function StartStep({ app, reload, goTonight }: { app: AppState; reload: () => Pr
               await api.autostart(v);
               await reload();
             }}
-            label="Start automatically when the lead starts the night"
+            label="Start automatically when the lead starts the run"
             hint="Keep this page open. Your computer joins as soon as the 'start for everyone' message arrives."
           />
         </div>

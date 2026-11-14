@@ -1,21 +1,21 @@
 // OpenAI Codex CLI, headless (`codex exec --json`), on the teammate's own ChatGPT-plan login.
-// Overnight guarantees:
+// Unattended-run guarantees:
 //  - approval_policy="never": Codex never stops to ask; a command its sandbox refuses just fails.
 //  - Sandbox: workspace-write (only the task worktree is writable), read-only for reviewer/answerer.
 //  - Network is on for package installs; pushes are blocked by the guard env (push URL points nowhere)
 //    and `gh` sees an empty config dir.
-//  - Codex has no in-process tool hooks, so the nightshift tools are a file mailbox in the worktree:
-//      .nightshift-mail/outbox.jsonl   agent → team (one JSON object per line), or out/*.json files
-//      .nightshift-mail/inbox.md       team → agent (appended live while it works)
+//  - Codex has no in-process tool hooks, so the relay tools are a file mailbox in the worktree:
+//      .relay-mail/outbox.jsonl   agent → team (one JSON object per line), or out/*.json files
+//      .relay-mail/inbox.md       team → agent (appended live while it works)
 //    The folder ignores itself (.gitignore "*"), so it never reaches a commit or a lease check.
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { childEnv } from "../exec.js";
 import { IS_WIN, killTree, resolveCli } from "../platform.js";
-import type { Adapter, AgentRequest, AgentResult, NightshiftTools } from "./types.js";
+import type { Adapter, AgentRequest, AgentResult, RelayTools } from "./types.js";
 
-export const MAILDIR = ".nightshift-mail";
+export const MAILDIR = ".relay-mail";
 
 const TOOL_NAMES = ["post_note", "ask", "answer", "record_assumption", "report_blocker", "request_contract_change", "submit_review"] as const;
 
@@ -24,7 +24,7 @@ function toolsGuide(readOnly: boolean): string {
     return `## Reporting back
 You are read-only and cannot write files. Put everything in your final message.
 If you are reviewing, end your final message with exactly one line: \`VERDICT: approve\` or \`VERDICT: changes\`, followed by your notes.`;
-  return `## Team tools (file mailbox — the only way to reach other agents tonight)
+  return `## Team tools (file mailbox — the only way to reach other agents during this run)
 Send by appending ONE JSON object per line to \`${MAILDIR}/outbox.jsonl\`, for example:
   printf '%s\\n' '{"tool":"record_assumption","decision":"Use SQLite WAL mode","why":"brief does not say"}' >> ${MAILDIR}/outbox.jsonl
 (Or create a file \`${MAILDIR}/out/<any-name>.json\` holding one such object.)
@@ -34,7 +34,7 @@ Tools and fields:
 - post_note {to, text} · answer {to, text, question_id} · report_blocker {kind, detail}
 - request_contract_change {file, change, reason}
 Messages from the team are appended to \`${MAILDIR}/inbox.md\`. Read it between steps and before you finish.
-Do not commit or push; Nightshift commits, reviews and merges your work.`;
+Do not commit or push; Relay commits, reviews and merges your work.`;
 }
 
 /** Best-effort reset time from a usage-limit message ("try again in 2 hours", "try again at 3:05 AM"). */
@@ -113,10 +113,10 @@ export class CodexAdapter implements Adapter {
           const o = JSON.parse(it.raw) as { tool?: string } & Record<string, string>;
           if (!o.tool || !(TOOL_NAMES as readonly string[]).includes(o.tool)) throw new Error(`unknown tool ${o.tool}`);
           req.onEvent({ kind: "tool", tool: `mailbox:${o.tool}`, input: o });
-          const fn = req.tools[o.tool as keyof NightshiftTools] as (a: unknown) => Promise<string>;
+          const fn = req.tools[o.tool as keyof RelayTools] as (a: unknown) => Promise<string>;
           await fn(o);
         } catch (e) {
-          appendFileSync(join(mail, "inbox.md"), `\n[nightshift] Could not read a mailbox entry (${String(e).slice(0, 120)}). Use one JSON object per line.\n`);
+          appendFileSync(join(mail, "inbox.md"), `\n[relay] Could not read a mailbox entry (${String(e).slice(0, 120)}). Use one JSON object per line.\n`);
         }
       }
       // team → agent

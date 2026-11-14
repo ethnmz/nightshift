@@ -1,17 +1,17 @@
 import { useState } from "react";
 import { api, AppState } from "./api";
-import { Button, Card, Field, Input, Moon, Note, Rays, Tag } from "./ui";
+import { Button, Card, Field, Input, Note, RelayMark, Rays, Tag } from "./ui";
 
 type Mode = null | "new" | "join" | "open";
 
-export function Welcome({ app, onOpened }: { app: AppState; onOpened: (tab?: "setup" | "tonight") => void }) {
+export function Welcome({ app, onOpened }: { app: AppState; onOpened: (tab?: "setup" | "live") => void }) {
   const [mode, setMode] = useState<Mode>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const parent = `${app.home}${app.sep}hackathons`;
   const [f, setF] = useState({ name: "", desc: "", url: "", parent, path: "" });
 
-  const act = async (fn: () => Promise<unknown>, tab?: "setup" | "tonight") => {
+  const act = async (fn: () => Promise<unknown>, tab?: "setup" | "live") => {
     setBusy(true);
     setErr("");
     try {
@@ -25,13 +25,13 @@ export function Welcome({ app, onOpened }: { app: AppState; onOpened: (tab?: "se
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-night-700">
+      <header className="border-b border-ink-700">
         <div className="mx-auto flex max-w-6xl items-center gap-2 px-5 py-4 sm:px-8">
-          <Moon className="h-5 w-5 text-cream" />
-          <span className="font-semibold text-cream">Nightshift</span>
+          <RelayMark className="h-5 w-5 text-cream" />
+          <span className="font-semibold text-cream">Relay</span>
           <div className="ml-auto flex items-center gap-2">
-            <button onClick={() => act(() => api.practice(), "tonight")} className="hidden px-3 text-[13px] text-neutral-300 hover:text-white sm:block">
-              Practice night
+            <button onClick={() => act(() => api.practice(), "live")} className="hidden px-3 text-[13px] text-neutral-300 hover:text-white sm:block">
+              Practice run
             </button>
             <Button kind="soft" onClick={() => setMode("join")}>
               Join my team
@@ -45,12 +45,12 @@ export function Welcome({ app, onOpened }: { app: AppState; onOpened: (tab?: "se
         <>
           <section className="page-in-right mx-auto grid max-w-6xl gap-10 px-5 pb-10 pt-14 sm:px-8 sm:pt-24 lg:grid-cols-[1.1fr_1fr]">
             <div>
-              <Tag>Overnight builds for hackathon teams</Tag>
+              <Tag>Multi-agent builds for hackathon teams</Tag>
               <h1 className="mt-5 text-5xl font-light leading-[1.05] text-cream sm:text-6xl">
-                Plan together tonight. Wake up to a working build.
+                Plan it together. Your agents build it together.
               </h1>
               <p className="mt-5 max-w-lg text-[15px] leading-relaxed text-neutral-400">
-                Every teammate's own Claude Code or Codex works through the night on their Mac or Windows laptop. Agents split the work, hand pieces to each other, review each other, and merge. Nobody has to stay awake.
+                Every teammate's own Claude Code or Codex works at the same time on their Mac or Windows laptop. Agents split the work, hand pieces to each other, review each other, and merge. Run it in the afternoon, the evening or overnight: nobody has to watch.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <Button onClick={() => setMode("new")}>Start a new team</Button>
@@ -63,25 +63,25 @@ export function Welcome({ app, onOpened }: { app: AppState; onOpened: (tab?: "se
           </section>
 
           <section className="relative mx-auto max-w-6xl px-5 sm:px-8">
-            <div className="grid border-t border-night-700 sm:grid-cols-3">
+            <div className="grid border-t border-ink-700 sm:grid-cols-3">
               {[
                 ["01", "Describe it", "Event, idea, team, rules. A planner turns it into contracts and small tasks for each person."],
-                ["02", "Sleep", "Each computer's agent builds its tasks, asks teammates' agents when stuck, and never waits for a human."],
+                ["02", "Run", "Each computer's agent builds its tasks, asks teammates' agents when stuck, and never waits for a human. Work alongside it or walk away."],
                 ["03", "Review", "One report with every decision the agents made, and one pull request into main."],
               ].map(([n, t, b], i) => (
-                <div key={n} className={`group py-8 transition-colors duration-300 sm:px-6 ${i ? "sm:border-l sm:border-night-700" : "sm:pl-0"}`}>
+                <div key={n} className={`group py-8 transition-colors duration-300 sm:px-6 ${i ? "sm:border-l sm:border-ink-700" : "sm:pl-0"}`}>
                   <div className="font-mono text-xs text-neutral-500 transition-colors duration-300 group-hover:text-copper">{n}</div>
                   <div className="mt-6 text-lg font-light text-cream">{t}</div>
                   <p className="mt-2 text-sm leading-relaxed text-neutral-400">{b}</p>
                 </div>
               ))}
             </div>
-            <div className="flex flex-wrap gap-x-6 gap-y-2 border-t border-night-700 py-6 text-sm">
+            <div className="flex flex-wrap gap-x-6 gap-y-2 border-t border-ink-700 py-6 text-sm">
               <button onClick={() => setMode("open")} className="group text-neutral-300 transition-colors hover:text-white">
                 Open a project folder <span className="inline-block transition-transform duration-200 group-hover:translate-x-1">→</span>
               </button>
-              <button onClick={() => act(() => api.practice(), "tonight")} className="group text-neutral-300 transition-colors hover:text-white">
-                Watch a practice night (no AI used) <span className="inline-block transition-transform duration-200 group-hover:translate-x-1">→</span>
+              <button onClick={() => act(() => api.practice(), "live")} className="group text-neutral-300 transition-colors hover:text-white">
+                Watch a practice run (no AI used) <span className="inline-block transition-transform duration-200 group-hover:translate-x-1">→</span>
               </button>
             </div>
           </section>
@@ -96,7 +96,7 @@ export function Welcome({ app, onOpened }: { app: AppState; onOpened: (tab?: "se
           {mode === "new" && (
             <form className="space-y-4" onSubmit={(e) => (e.preventDefault(), act(() => api.create(f.name, f.parent, f.desc)))}>
               <h2 className="text-2xl font-light text-cream">Start a new team</h2>
-              <p className="text-sm text-neutral-400">Nightshift creates a private GitHub repo for the project and a folder on this computer.</p>
+              <p className="text-sm text-neutral-400">Relay creates a private GitHub repo for the project and a folder on this computer.</p>
               <Field label="Project name" hint="becomes the repo name">
                 <Input autoFocus required placeholder="e.g. shiftsync" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value.replace(/\s+/g, "-") })} />
               </Field>
@@ -160,7 +160,7 @@ export function Welcome({ app, onOpened }: { app: AppState; onOpened: (tab?: "se
   );
 }
 
-/** A still version of the Tonight map on a copper grid. */
+/** A still version of the Live map on a green grid. */
 function HeroArt() {
   const people = [
     { x: 200, y: 52, n: "EM" },
@@ -169,7 +169,7 @@ function HeroArt() {
     { x: 70, y: 160, n: "AT" },
   ];
   return (
-    <div className="fade-in relative overflow-hidden rounded-md border border-night-700 bg-[#141414] transition-colors duration-300 hover:border-night-600">
+    <div className="fade-in relative overflow-hidden rounded-md border border-ink-700 bg-[#141414] transition-colors duration-300 hover:border-ink-600">
       <div className="copper-grid absolute inset-0" />
       <Rays className="absolute bottom-0 left-0 h-1/2 w-2/3 opacity-60" />
       <svg viewBox="0 0 400 320" className="relative block w-full">
@@ -179,7 +179,10 @@ function HeroArt() {
         <path d="M70,160 Q120,70 200,52" fill="none" stroke="#4a9d68" strokeWidth="1.5" strokeDasharray="5 5" className="dash-flow" />
         <path d="M330,160 Q290,250 200,268" fill="none" stroke="#9ec5e8" strokeWidth="1.5" strokeDasharray="5 5" className="dash-flow" />
         <circle cx="200" cy="160" r="26" fill="#1c1c1c" stroke="#4a9d68" />
-        <path transform="translate(190 148) scale(0.62)" d="M20 4a12 12 0 1 0 8 20A10 10 0 0 1 20 4z" fill="#ecebe4" />
+        <g transform="translate(188 148) scale(0.75)" fill="none" stroke="#ecebe4" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 12h17l-5-5" />
+          <path d="M26 20H9l5 5" />
+        </g>
         {people.map((p) => (
           <g key={p.n}>
             <circle cx={p.x} cy={p.y} r="22" fill="#171717" stroke="#ecebe4" strokeOpacity="0.5" />
@@ -189,8 +192,8 @@ function HeroArt() {
           </g>
         ))}
       </svg>
-      <div className="relative flex justify-between border-t border-night-700 px-4 py-2.5 font-mono text-[11px] text-neutral-500">
-        <span>night/2026-11-11</span>
+      <div className="relative flex justify-between border-t border-ink-700 px-4 py-2.5 font-mono text-[11px] text-neutral-500">
+        <span>relay/2026-11-14-1930</span>
         <span>11 / 13 merged</span>
       </div>
     </div>

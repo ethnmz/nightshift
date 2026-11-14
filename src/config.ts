@@ -1,6 +1,6 @@
-// Schemas and loaders for the two files a team approves in the evening:
-//   .nightshift/night.yaml  – standing pre-authorizations, nodes, limits, budget
-//   .nightshift/tasks.yaml  – the task DAG with lanes and leases
+// Schemas and loaders for the two files a team approves before a run:
+//   .relay/relay.yaml  – standing pre-authorizations, nodes, limits, budget
+//   .relay/tasks.yaml  – the task DAG with lanes and leases
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import YAML from "yaml";
@@ -8,7 +8,7 @@ import { z } from "zod";
 
 export const NodeSpec = z.object({
   id: z.string().regex(/^[a-z0-9-]+$/, "node id: lowercase letters, digits, dashes"),
-  name: z.string(), // shown in board posts: "[Ethan's Nightshift]"
+  name: z.string(), // shown in board posts: "[Ethan's Relay]"
   login: z.string().optional(), // GitHub login; preflight checks `gh` runs as this user
   lanes: z.array(z.string()).min(1),
   // Which coding agent this teammate's Mac runs, on their own subscription login.
@@ -24,19 +24,21 @@ export const BoardSpec = z.discriminatedUnion("kind", [
 ]);
 export type BoardSpec = z.infer<typeof BoardSpec>;
 
-export const NightConfig = z.object({
+export const RelayConfig = z.object({
   version: z.literal(1).default(1),
   project: z.string().default("project"),
-  night: z.string().default("auto"), // "auto" → today's local date YYYY-MM-DD
+  // Which run this plan belongs to. "Share with the team" writes a new id (YYYY-MM-DD-HHMM) each time
+  // the plan changes, so every computer agrees on it without asking. "auto" → today's date.
+  run_id: z.string().default("auto"),
   base_branch: z.string().default("main"),
   remote: z.string().default("origin"),
   board: BoardSpec,
   nodes: z.array(NodeSpec).min(1).max(8),
-  // Evening pre-authorization. These record what humans decided before bed so
-  // nothing overnight waits on them. Every field must be true to start a night.
+  // Standing pre-authorization. These record what humans decided before the run so
+  // nothing during it waits on them. Every field must be true to start a run.
   authorize: z.object({
     board_posts: z.boolean(),
-    merge_to_night_branch: z.boolean(),
+    merge_to_run_branch: z.boolean(),
     work_stealing: z.boolean(),
     contract_changes: z.boolean(),
     decide_with_assumptions: z.boolean(),
@@ -80,13 +82,13 @@ export const NightConfig = z.object({
     .object({
       enabled: z.boolean().default(true),
       mention: z.string().optional(), // GitHub login to @mention
-      finished: z.boolean().default(true), // also notify when the night is finished
+      finished: z.boolean().default(true), // also notify when the run is finished
     })
     .prefault({}),
   status_every_minutes: z.number().positive().default(10), // live progress comment refresh
   dashboard_port: z.number().int().default(4545),
 });
-export type NightConfig = z.infer<typeof NightConfig>;
+export type RelayConfig = z.infer<typeof RelayConfig>;
 
 export const Task = z.object({
   id: z.string().regex(/^[A-Za-z0-9_-]+$/),
@@ -100,7 +102,7 @@ export const Task = z.object({
   acceptance: z.array(z.string()).default([]),
   // must = demo-critical (built first); nice = only if there is time and usage left.
   priority: z.enum(["must", "nice"]).default("must"),
-  retry_of: z.string().optional(), // a morning retry of a parked task
+  retry_of: z.string().optional(), // a retry of a parked task
   max_turns: z.number().int().positive().optional(),
   minutes: z.number().positive().optional(),
   // Only read by the fake adapter (tests and rehearsals).
@@ -110,7 +112,7 @@ export type Task = z.infer<typeof Task>;
 
 export const TaskFile = z.object({
   tasks: z.array(Task),
-  // Optional suggestions from the planner, adopted into night.yaml if the team set none.
+  // Optional suggestions from the planner, adopted into relay.yaml if the team set none.
   check: z.string().optional(),
   gate: z.object({ command: z.string(), every: z.number().optional() }).optional(),
   contracts: z.array(z.string()).optional(),
@@ -127,34 +129,34 @@ export const DEFAULT_ALLOW = [
 
 export interface Paths {
   root: string; // target repo checkout
-  dir: string; // <root>/.nightshift
-  local: string; // <root>/.nightshift/local (gitignored runtime state)
-  night: string;
+  dir: string; // <root>/.relay
+  local: string; // <root>/.relay/local (gitignored runtime state)
+  config: string; // <root>/.relay/relay.yaml
   tasks: string;
   idea: string;
 }
 
 export function paths(root: string): Paths {
-  const dir = join(root, ".nightshift");
+  const dir = join(root, ".relay");
   return {
     root,
     dir,
     local: join(dir, "local"),
-    night: join(dir, "night.yaml"),
+    config: join(dir, "relay.yaml"),
     tasks: join(dir, "tasks.yaml"),
     idea: join(dir, "idea.md"),
   };
 }
 
-export function loadNight(root: string): NightConfig {
-  const p = paths(root).night;
-  if (!existsSync(p)) throw new Error(`missing ${p}. Run: nightshift init`);
-  return NightConfig.parse(YAML.parse(readFileSync(p, "utf8")));
+export function loadConfig(root: string): RelayConfig {
+  const p = paths(root).config;
+  if (!existsSync(p)) throw new Error(`missing ${p}. Run: relay init`);
+  return RelayConfig.parse(YAML.parse(readFileSync(p, "utf8")));
 }
 
 export function loadTasks(root: string): Task[] {
   const p = paths(root).tasks;
-  if (!existsSync(p)) throw new Error(`missing ${p}. Run: nightshift plan, or write it by hand`);
+  if (!existsSync(p)) throw new Error(`missing ${p}. Run: relay plan, or write it by hand`);
   return validateTasks(TaskFile.parse(YAML.parse(readFileSync(p, "utf8"))).tasks);
 }
 
@@ -180,24 +182,29 @@ export function validateTasks(tasks: Task[]): Task[] {
   return tasks;
 }
 
-/** Every authorize flag must be true, or a night would stall waiting for a person. */
-export function missingAuthorizations(cfg: NightConfig): string[] {
+/** Every authorize flag must be true, or a run would stall waiting for a person. */
+export function missingAuthorizations(cfg: RelayConfig): string[] {
   return Object.entries(cfg.authorize)
     .filter(([, v]) => !v)
     .map(([k]) => k);
 }
 
-export function nightName(cfg: NightConfig, now = new Date()): string {
-  if (cfg.night !== "auto") return cfg.night;
-  // A night that starts after midnight still belongs to the evening before.
-  const d = new Date(now.getTime() - (now.getHours() < 6 ? 86_400_000 : 0));
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** A fresh run id from the clock, e.g. 2026-11-14-1930. Sorts in start order. */
+export function newRunId(now = new Date()): string {
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
 }
 
-export const nightBranch = (night: string) => `night/${night}`;
+/** The run this plan belongs to. Time of day does not matter: the id comes from relay.yaml. */
+export function runName(cfg: RelayConfig, now = new Date()): string {
+  if (cfg.run_id !== "auto") return cfg.run_id;
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
 
-export function agentFor(cfg: NightConfig, node: NodeSpec): "claude" | "codex" | "fake" {
+export const runBranch = (runId: string) => `relay/${runId}`;
+
+export function agentFor(cfg: RelayConfig, node: NodeSpec): "claude" | "codex" | "fake" {
   if (cfg.adapter === "fake") return "fake";
   return node.agent ?? (cfg.adapter as "claude" | "codex");
 }
@@ -205,8 +212,8 @@ export function agentFor(cfg: NightConfig, node: NodeSpec): "claude" | "codex" |
 /** Env vars that would make an agent bill an API key instead of the teammate's subscription. */
 export const KEY_ENV = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "OPENAI_API_KEY", "CODEX_API_KEY"];
 
-export function findNode(cfg: NightConfig, id: string): NodeSpec {
+export function findNode(cfg: RelayConfig, id: string): NodeSpec {
   const n = cfg.nodes.find((x) => x.id === id);
-  if (!n) throw new Error(`node "${id}" is not in night.yaml (have: ${cfg.nodes.map((x) => x.id).join(", ")})`);
+  if (!n) throw new Error(`node "${id}" is not in relay.yaml (have: ${cfg.nodes.map((x) => x.id).join(", ")})`);
   return n;
 }

@@ -1,6 +1,6 @@
 # Write the hackathon submission for {{event}}
 
-The team's agents built this project overnight. You are in a read-only copy of the finished code. Read the code (start with the README, package files, entry points and tests) and the notes below, then write the submission.
+The team's agents built this project together. You are in a read-only copy of the finished code. Read the code (start with the README, package files, entry points and tests) and the notes below, then write the submission.
 
 ## The team's brief
 {{idea}}

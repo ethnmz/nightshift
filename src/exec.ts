@@ -1,4 +1,4 @@
-// Every subprocess Nightshift starts goes through here. Nothing may wait for a person:
+// Every subprocess Relay starts goes through here. Nothing may wait for a person:
 // stdin is closed, every tool that knows how to prompt is told not to, and a hard
 // timeout kills the whole process group.
 import { spawn } from "node:child_process";
@@ -39,13 +39,13 @@ export function childEnv(extra: Record<string, string> = {}, remove: string[] = 
 /**
  * Extra guard rails for agent processes (both Claude Code and Codex): git cannot push even if the
  * agent tries (push URL points nowhere), and `gh` sees an empty config dir, so no stored GitHub token.
- * Nightshift's own git/gh calls do not use this env.
+ * Relay's own git/gh calls do not use this env.
  */
 export function agentGuardEnv(emptyGhDir: string, remote = "origin"): Record<string, string> {
   return {
     GIT_CONFIG_COUNT: "2",
     GIT_CONFIG_KEY_0: `remote.${remote}.pushurl`,
-    GIT_CONFIG_VALUE_0: "file:///nightshift/agents-cannot-push",
+    GIT_CONFIG_VALUE_0: "file:///relay/agents-cannot-push",
     GIT_CONFIG_KEY_1: "push.default",
     GIT_CONFIG_VALUE_1: "nothing",
     GH_CONFIG_DIR: emptyGhDir,

@@ -1,9 +1,9 @@
-// Morning submission kit: the lead's agent reads the finished night branch (read-only) and
+// Submission kit: the lead's agent reads the finished run branch (read-only) and
 // drafts How to run, a demo script, what works vs. what's mocked, and a Devpost write-up.
-// Committing SUBMISSION.md to the night branch happens only when a person clicks it.
+// Committing SUBMISSION.md to the run branch happens only when a person clicks it.
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadNight, loadTasks, paths, nightBranch, agentFor, findNode, KEY_ENV, DEFAULT_ALLOW, Task } from "./config.js";
+import { loadConfig, loadTasks, paths, runBranch, agentFor, findNode, KEY_ENV, DEFAULT_ALLOW, Task } from "./config.js";
 import { Git } from "./git.js";
 import { Claims } from "./claims.js";
 import { makeBoard } from "./daemon.js";
@@ -12,9 +12,9 @@ import { prompt } from "./prompts.js";
 import { ClaudeAdapter } from "./agents/claude.js";
 import { CodexAdapter } from "./agents/codex.js";
 import { FakeAdapter } from "./agents/fake.js";
-import type { Adapter, NightshiftTools } from "./agents/types.js";
+import type { Adapter, RelayTools } from "./agents/types.js";
 
-const noTools: NightshiftTools = {
+const noTools: RelayTools = {
   post_note: async () => "not available",
   ask: async () => "not available",
   answer: async () => "not available",
@@ -25,12 +25,12 @@ const noTools: NightshiftTools = {
   submit_review: async () => "not available",
 };
 
-async function nightWorktree(root: string, node: string, night: string): Promise<{ git: Git; wt: string; head: string }> {
-  const cfg = loadNight(root);
-  const git = new Git(root, { name: "Nightshift", email: `${node}@nightshift.local` });
-  const ref = `refs/remotes/${cfg.remote}/${nightBranch(night)}`;
-  const f = await git.raw(["fetch", "--quiet", "--no-tags", cfg.remote, `+refs/heads/${nightBranch(night)}:${ref}`]);
-  if (f.code !== 0) throw new Error(`There is no ${nightBranch(night)} branch yet. Run a night first.`);
+async function runWorktree(root: string, node: string, runId: string): Promise<{ git: Git; wt: string; head: string }> {
+  const cfg = loadConfig(root);
+  const git = new Git(root, { name: "Relay", email: `${node}@relay.local` });
+  const ref = `refs/remotes/${cfg.remote}/${runBranch(runId)}`;
+  const f = await git.raw(["fetch", "--quiet", "--no-tags", cfg.remote, `+refs/heads/${runBranch(runId)}:${ref}`]);
+  if (f.code !== 0) throw new Error(`There is no ${runBranch(runId)} branch yet. Run a run first.`);
   const head = (await git.revParse(ref))!;
   const wt = join(paths(root).local, node, "wt", "_submission");
   await git.raw(["worktree", "remove", "--force", wt]);
@@ -40,13 +40,13 @@ async function nightWorktree(root: string, node: string, night: string): Promise
   return { git, wt, head };
 }
 
-export async function draftSubmission(root: string, node: string, night: string, adapterOverride?: Adapter): Promise<{ markdown: string; sections: { title: string; body: string }[] }> {
-  const cfg = loadNight(root);
+export async function draftSubmission(root: string, node: string, runId: string, adapterOverride?: Adapter): Promise<{ markdown: string; sections: { title: string; body: string }[] }> {
+  const cfg = loadConfig(root);
   const me = findNode(cfg, node);
   const setup = loadSetup(root);
-  const { git, wt } = await nightWorktree(root, node, night);
+  const { git, wt } = await runWorktree(root, node, runId);
   try {
-    const claims = new Claims(git, cfg.remote, night);
+    const claims = new Claims(git, cfg.remote, runId);
     const states = await claims.list();
     const dyn = (await claims.listTasks()).map((x) => Task.parse(x));
     const tasks = [...loadTasks(root), ...dyn];
@@ -55,7 +55,7 @@ export async function draftSubmission(root: string, node: string, night: string,
     let decisions: string[] = [];
     try {
       const msgs = await makeBoard(cfg, root, join(paths(root).local, node, "submission-cursor")).fetchAll();
-      decisions = msgs.filter((m) => m.env?.type === "assumption" && m.env.night === night).map((m) => `- ${String(m.env!.body.decision)}`);
+      decisions = msgs.filter((m) => m.env?.type === "assumption" && m.env.runId === runId).map((m) => `- ${String(m.env!.body.decision)}`);
     } catch {
       /* the board is optional here */
     }
@@ -102,21 +102,21 @@ export async function draftSubmission(root: string, node: string, night: string,
   }
 }
 
-/** A person clicked "Add to the pull request": commit SUBMISSION.md onto the night branch. */
-export async function commitSubmission(root: string, node: string, night: string, markdown: string): Promise<string> {
-  const cfg = loadNight(root);
+/** A person clicked "Add to the pull request": commit SUBMISSION.md onto the run branch. */
+export async function commitSubmission(root: string, node: string, runId: string, markdown: string): Promise<string> {
+  const cfg = loadConfig(root);
   for (let attempt = 0; attempt < 4; attempt++) {
-    const { git: rootGit, wt } = await nightWorktree(root, node, night);
+    const { git: rootGit, wt } = await runWorktree(root, node, runId);
     try {
-      const g = new Git(wt, { name: "Nightshift (submission)", email: `${node}@nightshift.local` });
+      const g = new Git(wt, { name: "Relay (submission)", email: `${node}@relay.local` });
       mkdirSync(wt, { recursive: true });
       writeFileSync(join(wt, "SUBMISSION.md"), markdown.endsWith("\n") ? markdown : markdown + "\n");
       if (!(await g.commitAll("Add SUBMISSION.md (README, demo script, Devpost draft)"))) return "unchanged";
-      const p = await g.raw(["push", "--quiet", cfg.remote, `HEAD:refs/heads/${nightBranch(night)}`]);
+      const p = await g.raw(["push", "--quiet", cfg.remote, `HEAD:refs/heads/${runBranch(runId)}`]);
       if (p.code === 0) return await g.ok(["rev-parse", "HEAD"]);
     } finally {
       await rootGit.raw(["worktree", "remove", "--force", wt]);
     }
   }
-  throw new Error("Could not push SUBMISSION.md (the night branch kept moving). Try again.");
+  throw new Error("Could not push SUBMISSION.md (the run branch kept moving). Try again.");
 }

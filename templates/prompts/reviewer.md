@@ -8,7 +8,7 @@ You are the reviewer. You are read-only: do not edit files. You may read anythin
 ## Lease
 {{lease_list}}
 
-## Diff against the night branch
+## Diff against the run branch
 ```diff
 {{diff}}
 ```

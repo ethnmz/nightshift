@@ -20,34 +20,34 @@ const git = (cwd: string, ...args: string[]) =>
     stdio: ["ignore", "pipe", "pipe"],
   }).toString().trim();
 
-export function makeTeam(opts: { tasks: unknown[]; night?: Record<string, unknown>; nodes?: typeof NODES }) {
-  const dir = mkdtempSync(join(tmpdir(), "nightshift-test-"));
+export function makeTeam(opts: { tasks: unknown[]; config?: Record<string, unknown>; nodes?: typeof NODES }) {
+  const dir = mkdtempSync(join(tmpdir(), "relay-test-"));
   const remote = join(dir, "remote.git");
   const seed = join(dir, "seed");
   git(dir, "init", "-q", "--bare", "-b", "main", remote);
   mkdirSync(seed);
   git(seed, "init", "-q", "-b", "main");
   writeFileSync(join(seed, "README.md"), "# fixture\n");
-  writeFileSync(join(seed, ".gitignore"), ".nightshift/local/\n");
-  mkdirSync(join(seed, ".nightshift"));
+  writeFileSync(join(seed, ".gitignore"), ".relay/local/\n");
+  mkdirSync(join(seed, ".relay"));
   const nodes = opts.nodes ?? NODES;
-  const night = {
+  const config = {
     version: 1,
     project: "fixture",
-    night: "2026-11-11",
+    run_id: "2026-11-11",
     board: { kind: "file", path: "../board.jsonl" },
     nodes,
-    authorize: { board_posts: true, merge_to_night_branch: true, work_stealing: true, contract_changes: true, decide_with_assumptions: true },
+    authorize: { board_posts: true, merge_to_run_branch: true, work_stealing: true, contract_changes: true, decide_with_assumptions: true },
     check: "test -f README.md",
     concurrency: 2,
     adapter: "fake",
     poll_seconds: 0.2,
     limits: { task_minutes: 1, stuck_minutes: 0.05, stale_claim_minutes: 0.05, heartbeat_seconds: 0.5, command_timeout_seconds: 20, retries: 1 },
     steal: { idle_seconds: 0 },
-    ...opts.night,
+    ...opts.config,
   };
-  writeFileSync(join(seed, ".nightshift", "night.yaml"), YAML.stringify(night));
-  writeFileSync(join(seed, ".nightshift", "tasks.yaml"), YAML.stringify({ tasks: opts.tasks }));
+  writeFileSync(join(seed, ".relay", "relay.yaml"), YAML.stringify(config));
+  writeFileSync(join(seed, ".relay", "tasks.yaml"), YAML.stringify({ tasks: opts.tasks }));
   git(seed, "add", "-A");
   git(seed, "commit", "-q", "-m", "seed");
   git(seed, "remote", "add", "origin", remote);

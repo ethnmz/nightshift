@@ -1,21 +1,21 @@
-// One Nightshift node: the always-on process on one teammate's Mac.
+// One Relay node: the always-on process on one teammate's Mac.
 // It watches the board, claims tasks, runs agents in worktrees, enforces leases,
-// runs checks and reviews, merges into the night branch, and runs the integration gate.
+// runs checks and reviews, merges into the run branch, and runs the integration gate.
 // Deterministic code owns every decision about state; models only do the task work.
 import { existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import picomatch from "picomatch";
-import { loadNight, loadTasks, nightBranch, nightName, paths, findNode, Task, NightConfig, NodeSpec, DEFAULT_ALLOW, validateTasks, agentFor, KEY_ENV } from "./config.js";
+import { loadConfig, loadTasks, runBranch, runName, paths, findNode, Task, RelayConfig, NodeSpec, DEFAULT_ALLOW, validateTasks, agentFor, KEY_ENV } from "./config.js";
 import { CodexAdapter } from "./agents/codex.js";
 import type { UsageInfo } from "./agents/types.js";
 import { Git } from "./git.js";
 import { Claims, StateRef } from "./claims.js";
 import { leaseViolations } from "./lease.js";
-import { pickNext, readiness, nightFinished, Pick, Readiness } from "./scheduler.js";
+import { pickNext, readiness, runFinished, Pick, Readiness } from "./scheduler.js";
 import { Board, FileBoard, GitHubIssueBoard } from "./board/board.js";
 import { Envelope, EnvelopeType, addressedTo, humanLine, isStopText, BoardMessage } from "./board/envelope.js";
 import { Ledger } from "./ledger.js";
-import { Adapter, AgentRequest, AgentResult, NightshiftTools, Role } from "./agents/types.js";
+import { Adapter, AgentRequest, AgentResult, RelayTools, Role } from "./agents/types.js";
 import { ClaudeAdapter } from "./agents/claude.js";
 import { FakeAdapter } from "./agents/fake.js";
 import { prompt, bullets } from "./prompts.js";
@@ -51,37 +51,16 @@ export interface DaemonOpts {
   adapter?: Adapter;
   board?: Board;
   loopMs?: number;
-  /** Exit when the night is finished (default true). The dashboard server keeps running separately. */
+  /** Exit when the run is finished (default true). The dashboard server keeps running separately. */
   exitWhenDone?: boolean;
-  /** Day shift: the same night continues while people work (retries, leftovers). */
-  day?: boolean;
-  /** Which night to join (default: tonight's name). Day shifts and the morning use the latest night. */
-  night?: string;
+  /** Which run to join (default: the run_id in relay.yaml). */
+  runId?: string;
 }
 
-/**
- * The night to show or continue. In the evening and overnight that is tonight; during the day
- * (or for a day shift) it is the most recent night branch that exists, so the morning shows
- * last night's results instead of an empty new night.
- */
-export async function latestNight(root: string, cfg: NightConfig, mode: "auto" | "latest" = "auto", now = new Date()): Promise<string> {
-  const tonight = nightName(cfg, now);
-  if (cfg.night !== "auto") return cfg.night;
-  const daytime = now.getHours() >= 6 && now.getHours() < 18;
-  if (mode === "auto" && !daytime) return tonight;
-  const r = await run("git", ["ls-remote", "--heads", cfg.remote, "night/*"], { cwd: root, timeoutMs: 30_000 });
-  const names = r.stdout
-    .split("\n")
-    .map((l) => /refs\/heads\/night\/(\d{4}-\d{2}-\d{2})$/.exec(l.trim())?.[1])
-    .filter((x): x is string => !!x && x <= tonight)
-    .sort();
-  return names[names.length - 1] ?? tonight;
-}
-
-export class NightDaemon {
-  cfg: NightConfig;
+export class RelayDaemon {
+  cfg: RelayConfig;
   me: NodeSpec;
-  night: string;
+  runId: string;
   branch: string;
   root: string;
   local: string;
@@ -109,8 +88,7 @@ export class NightDaemon {
   pausedUntil = 0;
   /** The agent's login stopped working; paused until a probe sees it fixed. */
   authLost = false;
-  day = false;
-  /** Day shift: path globs humans are working on, per teammate (latest wins). */
+  /** Path globs humans are editing right now, per teammate (latest wins). */
   reserves = new Map<string, string[]>();
   /** Last time each alert kind was raised by anyone on the team (from the board). */
   alertsSeen = new Map<string, number>();
@@ -129,23 +107,22 @@ export class NightDaemon {
 
   constructor(o: DaemonOpts) {
     this.root = o.root;
-    this.cfg = loadNight(o.root);
+    this.cfg = loadConfig(o.root);
     this.me = findNode(this.cfg, o.node);
-    this.night = o.night ?? nightName(this.cfg);
-    this.branch = nightBranch(this.night);
+    this.runId = o.runId ?? runName(this.cfg);
+    this.branch = runBranch(this.runId);
     const p = paths(o.root);
     this.local = join(p.local, this.me.id);
     mkdirSync(this.local, { recursive: true });
-    this.git = new Git(o.root, { name: `${this.me.name} (nightshift)`, email: `${this.me.id}@nightshift.local` });
-    this.claims = new Claims(this.git, this.cfg.remote, this.night);
-    this.ledger = new Ledger(join(this.local, `ledger-${this.night}.jsonl`), this.me.id);
+    this.git = new Git(o.root, { name: `${this.me.name} (relay)`, email: `${this.me.id}@relay.local` });
+    this.claims = new Claims(this.git, this.cfg.remote, this.runId);
+    this.ledger = new Ledger(join(this.local, `ledger-${this.runId}.jsonl`), this.me.id);
     this.board = o.board ?? makeBoard(this.cfg, o.root, join(this.local, "board-cursor"));
     this.agent = agentFor(this.cfg, this.me);
     this.adapter = o.adapter ?? (this.agent === "fake" ? new FakeAdapter(this.me.id) : this.agent === "codex" ? new CodexAdapter() : new ClaudeAdapter());
     this.baseTasks = loadTasks(o.root);
     this.loopMs = o.loopMs ?? 3000;
     this.exitWhenDone = o.exitWhenDone ?? true;
-    this.day = !!o.day;
   }
 
   // ---------- shared helpers ----------
@@ -165,7 +142,7 @@ export class NightDaemon {
   private addSpend(usd: number) {
     this.spentByNode.set(this.me.id, this.spentNode + usd);
   }
-  private remoteNight() {
+  private remoteRun() {
     return `refs/remotes/${this.cfg.remote}/${this.branch}`;
   }
 
@@ -178,7 +155,7 @@ export class NightDaemon {
       task: fields.task,
       body: { ...(fields.body ?? {}), spent: Number(this.spentNode.toFixed(4)), ...(this.usage ? { usage: this.usage } : {}), ...(this.paused() ? { paused_until: this.pausedUntil } : {}) },
       at: Date.now(),
-      night: this.night,
+      runId: this.runId,
     };
     this.ledger.add("posted", { task: env.task, data: { type, to: env.to, text } });
     try {
@@ -188,10 +165,10 @@ export class NightDaemon {
     }
   }
 
-  private async fetchNight(): Promise<string> {
+  private async fetchRun(): Promise<string> {
     return this.remoteLock.run(async () => {
-      await this.git.ok(["fetch", "--quiet", "--no-tags", this.cfg.remote, `+refs/heads/${this.branch}:${this.remoteNight()}`]);
-      return (await this.git.revParse(this.remoteNight()))!;
+      await this.git.ok(["fetch", "--quiet", "--no-tags", this.cfg.remote, `+refs/heads/${this.branch}:${this.remoteRun()}`]);
+      return (await this.git.revParse(this.remoteRun()))!;
     });
   }
 
@@ -205,23 +182,23 @@ export class NightDaemon {
         }
       }
       validateTasks(this.tasks);
-      await this.git.raw(["fetch", "--quiet", "--no-tags", this.cfg.remote, `+refs/heads/${this.branch}:${this.remoteNight()}`]);
-      const log = await this.git.raw(["log", "--format=%(trailers:key=Nightshift-Task,valueonly)", this.remoteNight()]);
-      if (log.code === 0) this.mergedOnNight = new Set(log.stdout.split("\n").map((x) => x.trim()).filter(Boolean));
+      await this.git.raw(["fetch", "--quiet", "--no-tags", this.cfg.remote, `+refs/heads/${this.branch}:${this.remoteRun()}`]);
+      const log = await this.git.raw(["log", "--format=%(trailers:key=Relay-Task,valueonly)", this.remoteRun()]);
+      if (log.code === 0) this.mergedOnRun = new Set(log.stdout.split("\n").map((x) => x.trim()).filter(Boolean));
     });
   }
 
   statesWithMerged(): Map<string, StateRef> {
     const states = new Map(this.states);
-    for (const id of this.mergedOnNight) {
+    for (const id of this.mergedOnRun) {
       const s = states.get(id);
       if (s?.state.status !== "done") states.set(id, { task: id, sha: s?.sha ?? "", state: { status: "done", node: s?.state.node ?? "?", at: Date.now(), attempt: s?.state.attempt ?? 1 } });
     }
     return states;
   }
 
-  /** Task ids whose squash commit is on the night branch (the ground truth, even if a state write was lost). */
-  mergedOnNight = new Set<string>();
+  /** Task ids whose squash commit is on the run branch (the ground truth, even if a state write was lost). */
+  mergedOnRun = new Set<string>();
 
   /** No new claims at or after this time (deadline − stop_before), if a deadline is set. */
   cutoffAt(): number | undefined {
@@ -236,8 +213,8 @@ export class NightDaemon {
 
   // ---------- lifecycle ----------
 
-  /** Creates the night branch from the base branch if no node has yet (compare-and-swap create). */
-  async ensureNightBranch() {
+  /** Creates the run branch from the base branch if no node has yet (compare-and-swap create). */
+  async ensureRunBranch() {
     await this.remoteLock.run(async () => {
       const base = this.cfg.base_branch;
       await this.git.ok(["fetch", "--quiet", "--no-tags", this.cfg.remote, `+refs/heads/${base}:refs/remotes/${this.cfg.remote}/${base}`]);
@@ -246,7 +223,7 @@ export class NightDaemon {
       const ref = `refs/heads/${this.branch}`;
       await this.git.raw(["push", "--quiet", `--force-with-lease=${ref}:`, this.cfg.remote, `${sha}:${ref}`]); // fails harmlessly if it exists
     });
-    await this.fetchNight();
+    await this.fetchRun();
   }
 
   stopFile() {
@@ -263,10 +240,10 @@ export class NightDaemon {
 
   async start(): Promise<void> {
     if (existsSync(this.stopFile())) rmSync(this.stopFile());
-    this.ledger.add("node_start", { data: { night: this.night, adapter: this.adapter.name, board: this.board.describe() } });
-    await this.ensureNightBranch();
+    this.ledger.add("node_start", { data: { runId: this.runId, adapter: this.adapter.name, board: this.board.describe() } });
+    await this.ensureRunBranch();
     await this.replayBoard();
-    await this.post("node_up", `${this.me.name}'s node is up for ${this.day ? "a day shift on" : "night"} ${this.night} (lanes: ${this.me.lanes.join(", ")}).`, {
+    await this.post("node_up", `${this.me.name}'s node is up for run ${this.runId} (lanes: ${this.me.lanes.join(", ")}).`, {
       body: { lanes: this.me.lanes, concurrency: this.cfg.concurrency },
     });
     const boardLoop = this.boardLoop();
@@ -274,11 +251,11 @@ export class NightDaemon {
     try {
       await this.schedLoop();
     } finally {
-      this.stop(this.stopReason || "night finished");
+      this.stop(this.stopReason || "run finished");
       await boardLoop.catch(() => {});
       await statusLoop.catch(() => {});
       const s = this.summary();
-      if (this.finished && this.cfg.alerts.finished) await this.alert("finished", `The night is finished: ${this.teamSummary()}. Morning report is ready in Nightshift.`);
+      if (this.finished && this.cfg.alerts.finished) await this.alert("finished", `The run is finished: ${this.teamSummary()}. The report is ready on the Results tab.`);
       await this.post("node_down", `${this.me.name}'s node is done: ${s}`, { body: { merges: this.merges, reason: this.stopReason } });
       this.life.set(this.me.id, "node_down");
       await this.writeStatus(true).catch(() => {});
@@ -305,9 +282,9 @@ export class NightDaemon {
         continue;
       }
       const r = this.readinessNow();
-      if (nightFinished(r) && this.running.size === 0) {
+      if (runFinished(r) && this.running.size === 0) {
         this.finished = true;
-        this.stopReason = "night finished";
+        this.stopReason = "run finished";
         if (this.exitWhenDone) break;
       }
       const overBudget = this.spentNode >= this.cfg.budget.node_usd || this.spentTeam >= this.cfg.budget.team_usd;
@@ -390,7 +367,7 @@ export class NightDaemon {
       if (!replay && isStopText(m.text)) this.stop(`stop posted on the board by ${m.author}`);
       return;
     }
-    if (env.night && env.night !== this.night) return;
+    if (env.runId && env.runId !== this.runId) return;
     if (env.body.usage && typeof env.body.usage === "object") this.usageByNode.set(env.from, env.body.usage as UsageInfo);
     if (typeof env.body.spent === "number") this.spentByNode.set(env.from, Math.max(this.spentByNode.get(env.from) ?? 0, env.body.spent as number));
     if (env.type === "node_up" || env.type === "node_down") this.life.set(env.from, env.type);
@@ -423,7 +400,7 @@ export class NightDaemon {
     if (env.type === "contract_change") void this.maybeQueueContractChange(env);
   }
 
-  /** The first node (in night.yaml order) that owns a lane answers for it, so there is exactly one responder. */
+  /** The first node (in relay.yaml order) that owns a lane answers for it, so there is exactly one responder. */
   private responderFor(lane: string): string | undefined {
     return this.cfg.nodes.find((n) => n.lanes.includes(lane))?.id;
   }
@@ -455,7 +432,7 @@ export class NightDaemon {
   private async answer(q: Envelope) {
     const lane = q.to.startsWith("lane:") ? q.to.slice(5) : this.me.lanes[0];
     const wt = join(this.local, "wt", "_answer");
-    const head = await this.fetchNight();
+    const head = await this.fetchRun();
     await this.freshWorktree(wt, head, null);
     const res = await this.runAgent({
       role: "answerer",
@@ -511,7 +488,7 @@ export class NightDaemon {
 
   // ---------- tools exposed to workers ----------
 
-  private toolsFor(taskId: string, lane: string, reviewSink?: (v: "approve" | "changes", notes: string) => void): NightshiftTools {
+  private toolsFor(taskId: string, lane: string, reviewSink?: (v: "approve" | "changes", notes: string) => void): RelayTools {
     const qid = () => `Q-${this.me.id}-${++this.counter}`;
     return {
       post_note: async ({ to, text }) => {
@@ -535,14 +512,14 @@ export class NightDaemon {
       record_assumption: async ({ decision, why }) => {
         this.assumptions++;
         await this.post("assumption", `${taskId} assumed: ${decision.slice(0, 300)}`, { task: taskId, body: { decision, why, from_task: taskId, lane } });
-        return "recorded for morning review; continue";
+        return "recorded for the team to review; continue";
       },
       report_blocker: async ({ kind, detail }) => {
         await this.post("blocker", `${taskId} blocked (${kind}): ${detail.slice(0, 300)}`, { task: taskId, body: { kind, text: detail, from_task: taskId, lane } });
         return "blocker reported; continue with what you can do";
       },
       request_contract_change: async ({ file, change, reason }) => {
-        if (!this.cfg.authorize.contract_changes) return "Contract changes are not authorized tonight. Work against the current contract and record an assumption.";
+        if (!this.cfg.authorize.contract_changes) return "Contract changes are not authorized for this run. Work against the current contract and record an assumption.";
         const lane2 = this.cfg.contract_lane ?? this.laneOwning(file) ?? "*";
         await this.post("contract_change", `${taskId} requests a change to ${file}: ${reason.slice(0, 200)}`, {
           to: lane2 === "*" ? "*" : `lane:${lane2}`,
@@ -810,16 +787,16 @@ export class NightDaemon {
   private async execute(t: Task, r: Running) {
     const hb = this.heartbeat(t, r);
     const wt = join(this.local, "wt", t.id);
-    const branch = `ns/${this.night}/${t.id}`;
+    const branch = `relay-work/${this.runId}/${t.id}`;
     let session: string | undefined;
     let failure = "";
     let reviewRounds = 0;
     let base = "";
     try {
       r.phase = "worktree";
-      base = await this.fetchNight();
+      base = await this.fetchRun();
       await this.freshWorktree(wt, base, branch);
-      const g = new Git(wt, { name: `${this.me.name} (nightshift)`, email: `${this.me.id}@nightshift.local` });
+      const g = new Git(wt, { name: `${this.me.name} (relay)`, email: `${this.me.id}@relay.local` });
       const maxAgentRuns = 1 + this.cfg.limits.retries + this.cfg.review.max_rounds;
       let success = false;
 
@@ -833,7 +810,7 @@ export class NightDaemon {
                 title: t.title,
                 lane: t.lane,
                 role: t.role,
-                night_branch: this.branch,
+                run_branch: this.branch,
                 brief: t.brief || t.title,
                 lease_list: bullets(t.lease),
                 acceptance_list: bullets(t.acceptance, "(none; the global check still runs)"),
@@ -888,7 +865,7 @@ export class NightDaemon {
               notes = (m[2].trim() || rv.text).slice(0, 4000);
             }
           }
-          // A reviewer that never submits a verdict does not block the night.
+          // A reviewer that never submits a verdict does not block the run.
           this.ledger.add("review", { task: t.id, data: { verdict: verdict ?? "none", notes } });
           if (verdict === "changes") {
             reviewRounds++;
@@ -906,7 +883,7 @@ export class NightDaemon {
 
       if (r.lost) return;
       if (!success || this.stopped) {
-        if (this.stopped) return; // claim goes stale; a restarted night can take it over
+        if (this.stopped) return; // claim goes stale; a restarted run can take it over
         await this.park(t, r, g, failure || "ran out of attempts");
         return;
       }
@@ -933,16 +910,16 @@ export class NightDaemon {
     }
   }
 
-  /** Squash onto the night branch and push (never force). Retries when another node merged first. */
+  /** Squash onto the run branch and push (never force). Retries when another node merged first. */
   private async merge(t: Task, r: Running, g: Git, base: string): Promise<string | null> {
-    const msg = `${t.id}: ${t.title}\n\nNightshift-Task: ${t.id}\nNightshift-Node: ${this.me.id}\nNightshift-Lane: ${t.lane}`;
+    const msg = `${t.id}: ${t.title}\n\nRelay-Task: ${t.id}\nRelay-Node: ${this.me.id}\nRelay-Lane: ${t.lane}`;
     await g.ok(["reset", "--soft", base]);
     await g.ok(["commit", "-q", "--no-verify", "--allow-empty", "-m", msg]);
     for (let attempt = 0; attempt < 8 && !r.lost && !this.stopped; attempt++) {
-      const head = await this.fetchNight();
-      const already = await this.git.raw(["log", "--format=%(trailers:key=Nightshift-Task,valueonly)", head]);
+      const head = await this.fetchRun();
+      const already = await this.git.raw(["log", "--format=%(trailers:key=Relay-Task,valueonly)", head]);
       if (already.stdout.split("\n").some((x) => x.trim() === t.id)) {
-        this.ledger.add("merge_skipped", { task: t.id, data: { reason: "already on the night branch" } });
+        this.ledger.add("merge_skipped", { task: t.id, data: { reason: "already on the run branch" } });
         r.lost = true;
         return null;
       }
@@ -957,7 +934,7 @@ export class NightDaemon {
             cwd: g.cwd,
             readOnly: false,
             running: r,
-            prompt: `A rebase of task ${t.id} onto the latest night branch stopped with conflicts.\n\n${tail(rb.stdout + rb.stderr, 4000)}\n\nResolve every conflict marker in the conflicted files (keep both sides' intent; other tasks' merged work wins on files outside your lease), then run \`git add -A\` and \`git -c core.editor=true rebase --continue\`. Do not abort the rebase.`,
+            prompt: `A rebase of task ${t.id} onto the latest run branch stopped with conflicts.\n\n${tail(rb.stdout + rb.stderr, 4000)}\n\nResolve every conflict marker in the conflicted files (keep both sides' intent; other tasks' merged work wins on files outside your lease), then run \`git add -A\` and \`git -c core.editor=true rebase --continue\`. Do not abort the rebase.`,
           });
           const stillRebasing = existsSync(join(g.cwd, ".git")) && (await g.raw(["rev-parse", "--verify", "--quiet", "REBASE_HEAD"])).code === 0;
           if (!res.ok || stillRebasing) {
@@ -971,7 +948,7 @@ export class NightDaemon {
         const lease = await this.enforceLease(t, g, base);
         const checks = await this.runChecks(t, g.cwd);
         if (!checks.ok || lease.length) {
-          await this.park(t, r, g, `checks failed after rebasing onto newer night work:\n${checks.output}`);
+          await this.park(t, r, g, `checks failed after rebasing onto newer run work:\n${checks.output}`);
           return null;
         }
         // Keep one commit per task.
@@ -983,7 +960,7 @@ export class NightDaemon {
       this.ledger.add("merge_retry", { task: t.id, data: { attempt, stderr: pushed.stderr.slice(0, 300) } });
       await sleep(200 + Math.random() * 800);
     }
-    if (!r.lost && !this.stopped) await this.park(t, r, g, "could not merge after 8 attempts (night branch kept moving)");
+    if (!r.lost && !this.stopped) await this.park(t, r, g, "could not merge after 8 attempts (run branch kept moving)");
     return null;
   }
 
@@ -1001,17 +978,17 @@ export class NightDaemon {
 
   private async park(t: Task, r: Running, g: Git, why: string) {
     r.phase = "parked";
-    // Keep the work for the morning: push the task branch (a new branch name, never a force).
+    // Keep the work for review: push the task branch (a new branch name, never a force).
     let kept = "";
     if (g.cwd !== this.root) {
       await g.commitAll(`${t.id}: parked work`).catch(() => false);
-      const ref = `refs/heads/ns/${this.night}/${t.id}-a${r.attempt}`;
+      const ref = `refs/heads/relay-work/${this.runId}/${t.id}-a${r.attempt}`;
       const p = await this.remoteLock.run(() => g.raw(["push", "--quiet", this.cfg.remote, `HEAD:${ref}`]));
       if (p.code === 0) kept = ref.replace("refs/heads/", "");
     }
     await this.transitionMine(t, r, { status: "parked", node: this.me.id, attempt: r.attempt, note: why.slice(0, 1500), since: r.startedAt });
     this.ledger.add("task_parked", { task: t.id, data: { why, branch: kept, cost: r.cost } });
-    await this.post("task_parked", `Parked ${t.id} (${t.title}) for the morning: ${why.slice(0, 250)}`, {
+    await this.post("task_parked", `Parked ${t.id} (${t.title}) for review: ${why.slice(0, 250)}`, {
       task: t.id,
       body: { why: why.slice(0, 3000), branch: kept, cost: r.cost, lane: t.lane },
     });
@@ -1021,7 +998,7 @@ export class NightDaemon {
     const gate = this.cfg.gate;
     if (!gate || this.merges % gate.every !== 0) return;
     const wt = join(this.local, "wt", "_gate");
-    const head = await this.fetchNight();
+    const head = await this.fetchRun();
     await this.freshWorktree(wt, head, null);
     const res = await sh(gate.command, { cwd: wt, timeoutMs: this.cfg.limits.command_timeout_seconds * 1000 });
     await this.removeWorktree(wt).catch(() => {});
@@ -1031,11 +1008,11 @@ export class NightDaemon {
       await this.post("gate_passed", `Integration gate passed at ${head.slice(0, 8)}.`, { body: { head } });
       return;
     }
-    if (++this.gateFails >= 2) await this.alert("gate", `The full check has failed ${this.gateFails} times in a row on the night branch. A fixer task is queued; check the board if it keeps failing.`);
+    if (++this.gateFails >= 2) await this.alert("gate", `The full check has failed ${this.gateFails} times in a row on the run branch. A fixer task is queued; check the board if it keeps failing.`);
     await this.post("gate_failed", `Integration gate FAILED at ${head.slice(0, 8)}. Queuing a fixer.`, { body: { head, text: tail(res.stdout + res.stderr, 2000) } });
     const openFix = this.tasks.some((t) => t.id.startsWith("FIX-") && !["done", "parked"].includes(this.states.get(t.id)?.state.status ?? ""));
     if (openFix) return;
-    const recent = await this.git.ok(["log", "--format=%h %s", "-n", "8", this.remoteNight()]).catch(() => "");
+    const recent = await this.git.ok(["log", "--format=%h %s", "-n", "8", this.remoteRun()]).catch(() => "");
     const id = `FIX-${this.me.id}-${Date.now().toString(36)}`;
     await this.addDynamicTask(
       {
@@ -1043,7 +1020,7 @@ export class NightDaemon {
         title: "Repair the integration gate",
         lane: this.cfg.contract_lane ?? this.me.lanes[0],
         role: "fixer",
-        brief: `The integration gate \`${gate.command}\` fails on the night branch at ${head.slice(0, 8)}.\n\nRecent merges:\n${recent}\n\nOutput:\n${tail(res.stdout + res.stderr, 6000)}\n\nFind the cause and make the gate pass with the smallest correct change. Do not delete or skip tests.`,
+        brief: `The integration gate \`${gate.command}\` fails on the run branch at ${head.slice(0, 8)}.\n\nRecent merges:\n${recent}\n\nOutput:\n${tail(res.stdout + res.stderr, 6000)}\n\nFind the cause and make the gate pass with the smallest correct change. Do not delete or skip tests.`,
         lease: ["**"],
         depends_on: [],
         contracts: this.cfg.contracts,
@@ -1144,7 +1121,7 @@ export class NightDaemon {
 
   // ---------- live progress note on the board ----------
 
-  /** The first teammate (night.yaml order) whose node is up writes the note; others take over if it goes stale. */
+  /** The first teammate (relay.yaml order) whose node is up writes the note; others take over if it goes stale. */
   private amStatusWriter(): boolean {
     const first = this.cfg.nodes.find((n) => n.id === this.me.id ? !this.stopped || this.finished : this.life.get(n.id) === "node_up");
     return first?.id === this.me.id;
@@ -1164,11 +1141,11 @@ export class NightDaemon {
   async writeStatus(final: boolean) {
     let mine = this.amStatusWriter();
     if (!mine && !final) {
-      const at = await this.board.statusUpdatedAt(this.night).catch(() => null);
+      const at = await this.board.statusUpdatedAt(this.runId).catch(() => null);
       mine = at === null || Date.now() - at > 2.5 * this.cfg.status_every_minutes * 60_000;
     }
     if (!mine) return;
-    await this.board.upsertStatus(this.night, this.statusMarkdown());
+    await this.board.upsertStatus(this.runId, this.statusMarkdown());
   }
 
   teamSummary(): string {
@@ -1207,14 +1184,14 @@ export class NightDaemon {
     const spent = [...this.spentByNode.values()].reduce((a, b) => a + b, 0);
     const cutoff = this.cutoffAt();
     return [
-      `### Nightshift: ${this.day ? "day shift" : "night"} of ${this.night}`,
+      `### Relay: run ${this.runId}`,
       "",
       `\`${bar}\` **${done} / ${this.tasks.length} merged**${c("running") ? ` · ${c("running")} building` : ""}${parked.length ? ` · ${parked.length} set aside` : ""}`,
       "",
       ...lines,
-      ...(parked.length ? ["", `Set aside for the morning: ${parked.map((t) => t.id).join(", ")}`] : []),
+      ...(parked.length ? ["", `Set aside for review: ${parked.map((t) => t.id).join(", ")}`] : []),
       "",
-      `Last full check: ${this.gateFails ? `failing (${this.gateFails} in a row)` : "passing or not run yet"} · ${this.agent === "fake" ? "practice night (no AI used)" : `estimated usage $${spent.toFixed(2)}${this.cfg.auth === "subscription" ? " (subscriptions, not billed)" : ""}`}${cutoff ? ` · no new tasks after ${time(cutoff)}` : ""}`,
+      `Last full check: ${this.gateFails ? `failing (${this.gateFails} in a row)` : "passing or not run yet"} · ${this.agent === "fake" ? "practice run (no AI used)" : `estimated usage $${spent.toFixed(2)}${this.cfg.auth === "subscription" ? " (subscriptions, not billed)" : ""}`}${cutoff ? ` · no new tasks after ${time(cutoff)}` : ""}`,
       "",
       `_Updated ${time(Date.now())}${final_marker()}_`,
     ].join("\n");
@@ -1235,7 +1212,7 @@ export class NightDaemon {
     return {
       node: this.me,
       nodes: this.cfg.nodes,
-      night: this.night,
+      runId: this.runId,
       branch: this.branch,
       project: this.cfg.project,
       adapter: this.adapter.name,
@@ -1249,7 +1226,6 @@ export class NightDaemon {
       auth: this.cfg.auth,
       pausedUntil: this.pausedUntil,
       authLost: this.authLost,
-      day: this.day,
       reserves: Object.fromEntries(this.reserves),
       cutoffAt: this.cutoffAt() ?? null,
       deadline: this.cfg.deadline ?? null,
@@ -1269,7 +1245,7 @@ export class NightDaemon {
   }
 }
 
-export function makeBoard(cfg: NightConfig, root: string, cursorPath: string): Board {
+export function makeBoard(cfg: RelayConfig, root: string, cursorPath: string): Board {
   if (cfg.board.kind === "file") return new FileBoard(join(root, cfg.board.path), cursorPath);
   const repo = cfg.board.repo ?? repoFromRemote(root, cfg.remote);
   if (!cfg.board.issue) throw new Error("the team board is not created yet: finish the Share step in the setup");
@@ -1314,5 +1290,5 @@ class UsageLimitHit extends Error {
 }
 
 function final_marker(): string {
-  return " by Nightshift. Reply `nightshift stop` to stop every computer.";
+  return " by Relay. Reply `relay stop` to stop every computer.";
 }

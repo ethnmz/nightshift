@@ -1,5 +1,5 @@
 // Local, append-only record of everything this node did or saw. Feeds the dashboard (live,
-// over SSE) and the morning report. Never shared directly: the board and git refs are shared.
+// over SSE) and the run report. Never shared directly: the board and git refs are shared.
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { EventEmitter } from "node:events";

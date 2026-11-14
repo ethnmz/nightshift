@@ -1,5 +1,5 @@
 {
-  "name": "nightshift-dashboard",
+  "name": "relay-dashboard",
   "private": true,
   "type": "module",
   "scripts": {

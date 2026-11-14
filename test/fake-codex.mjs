@@ -39,14 +39,14 @@ process.stdin.on("end", async () => {
       writeFileSync(join(cwd, p), c);
       out({ type: "item.completed", item: { type: "file_change", changes: [{ path: p, kind: "add" }] } });
     }
-    for (const o of cfg.outbox ?? []) appendFileSync(join(cwd, ".nightshift-mail/outbox.jsonl"), JSON.stringify(o) + "\n");
+    for (const o of cfg.outbox ?? []) appendFileSync(join(cwd, ".relay-mail/outbox.jsonl"), JSON.stringify(o) + "\n");
     if (cfg.wait_inbox_ms) {
       const until = Date.now() + cfg.wait_inbox_ms;
-      const inbox = join(cwd, ".nightshift-mail/inbox.md");
+      const inbox = join(cwd, ".relay-mail/inbox.md");
       while (Date.now() < until && !readFileSync(inbox, "utf8").includes("→")) await new Promise((r) => setTimeout(r, 100));
       writeFileSync(join(cwd, cfg.inbox_copy ?? "inbox-copy.txt"), readFileSync(inbox, "utf8"));
     }
-    writeFileSync(join(cwd, ".nightshift-mail/flags.json"), JSON.stringify(checks));
+    writeFileSync(join(cwd, ".relay-mail/flags.json"), JSON.stringify(checks));
     if (cfg.flags_file) writeFileSync(join(cwd, cfg.flags_file), JSON.stringify(checks));
   }
   const msg = readOnly ? (prompt.includes("VERDICT") ? `Looks fine.\nVERDICT: ${cfg.verdict ?? "approve"}` : "Fake answer.") : "Done.";

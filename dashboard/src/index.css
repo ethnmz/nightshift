@@ -3,12 +3,12 @@
 /* Visual language: dark Retool site with a forest-green accent. Warm near-black, hairline dividers, light large type,
    cream pill buttons, forest-green accent lines ("copper" token name kept for history). */
 @theme {
-  --color-night-950: #111111; /* page */
-  --color-night-900: #171717; /* panels */
-  --color-night-850: #1c1c1c; /* hover / raised */
-  --color-night-800: #232323; /* tags, chips */
-  --color-night-700: #2d2d2d; /* hairlines, selected */
-  --color-night-600: #3a3a3a;
+  --color-ink-950: #111111; /* page */
+  --color-ink-900: #171717; /* panels */
+  --color-ink-850: #1c1c1c; /* hover / raised */
+  --color-ink-800: #232323; /* tags, chips */
+  --color-ink-700: #2d2d2d; /* hairlines, selected */
+  --color-ink-600: #3a3a3a;
   --color-cream: #ecebe4;
   --color-cream-dim: #c9c7bd;
   --color-copper: #4a9d68;
@@ -23,7 +23,7 @@
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 
-html, body { background: var(--color-night-950); color: #d6d4cc; -webkit-font-smoothing: antialiased; }
+html, body { background: var(--color-ink-950); color: #d6d4cc; -webkit-font-smoothing: antialiased; }
 ::selection { background: #4a9d6855; }
 h1, h2, h3 { letter-spacing: -0.02em; }
 .scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }

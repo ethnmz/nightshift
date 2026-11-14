@@ -10,7 +10,7 @@ import { Setup, type Member } from "./setup.js";
 import { childEnv } from "./exec.js";
 import { KEY_ENV } from "./config.js";
 
-type Section = "name" | "track" | "deadline" | "pitch" | "problem" | "demo" | "must" | "nice" | "stack" | "rules" | "team" | "overnight" | "links";
+type Section = "name" | "track" | "deadline" | "pitch" | "problem" | "demo" | "must" | "nice" | "stack" | "rules" | "team" | "agentRules" | "links";
 
 const HEADINGS: [Section, RegExp][] = [
   ["track", /challenge|track|prompt|theme|sponsor/i],
@@ -19,7 +19,7 @@ const HEADINGS: [Section, RegExp][] = [
   ["must", /must[- ]?have|requirements?|mvp|p0|scope/i],
   ["nice", /nice[- ]?to[- ]?have|stretch|p1|bonus|extras?/i],
   ["stack", /stack|tech|technolog|tools?$/i],
-  ["overnight", /overnight|night rules|settings|config/i],
+  ["agentRules", /overnight|night rules|agent rules|run rules|settings|config/i],
   ["rules", /rules|constraints|guidelines|do not|don't/i],
   ["team", /team|members|people|who/i],
   ["problem", /problem|users?|audience|why/i],
@@ -83,7 +83,7 @@ export function parseMemberLine(line: string): Partial<Member> | null {
   return m;
 }
 
-function parseOvernight(body: string, team: Partial<Member>[]): Partial<Setup["rules"]> {
+function parseRules(body: string, team: Partial<Member>[]): Partial<Setup["rules"]> {
   const r: Partial<Setup["rules"]> = {};
   const get = (re: RegExp) => re.exec(body)?.[1]?.trim();
   const per = get(/agents?\s*(?:per|\/)\s*computer\s*[:=]\s*(\d)/i);
@@ -177,7 +177,7 @@ export function parseBrief(md: string): { found: Partial<Record<Section, string>
     const m = parseMemberLine(l);
     if (m) team.push(m);
   }
-  const rules = found.overnight ? parseOvernight(found.overnight, team) : {};
+  const rules = found.agentRules ? parseRules(found.agentRules, team) : {};
   return { found, weak, team, rules };
 }
 
@@ -212,7 +212,7 @@ const AI_SCHEMA = {
 };
 
 async function aiExtract(md: string, model?: string): Promise<Record<string, any>> {
-  const prompt = `Read this hackathon brief written by a team and fill in the setup form for an overnight AI build.
+  const prompt = `Read this hackathon brief written by a team and fill in the setup form for a multi-agent AI build.
 Rules: copy the team's own words where possible; keep lists as markdown lists; leave a field as "" when the brief does not say (never invent people, usernames, dates or requirements); "demo" is what the demo must show in order; "rules" are rules the coding agents must follow; for rules.* only include values the brief states.
 
 <brief>
@@ -335,7 +335,7 @@ export async function autofill(md: string, current: Setup, opts: { ai: boolean; 
   if (typeof r.stealing === "boolean") s.rules.stealing = r.stealing;
   if (typeof r.check === "string" && r.check) s.rules.check = r.check;
   if (ownerName) s.rules.contractsOwner = String(ownerName); // a name; saveSetup maps it to an id
-  if (Object.keys(r).length) filled.add("overnight rules");
+  if (Object.keys(r).length) filled.add("agent rules");
 
   return { setup: Setup.parse(s), filled: [...filled], usedAI: !!ai, aiError };
 }

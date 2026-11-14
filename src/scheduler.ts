@@ -1,5 +1,5 @@
 // Deterministic task selection. No model decides what runs next.
-import type { NightConfig, NodeSpec, Task } from "./config.js";
+import type { RelayConfig, NodeSpec, Task } from "./config.js";
 import type { StateRef } from "./claims.js";
 import { leasesOverlap } from "./lease.js";
 
@@ -66,7 +66,7 @@ export function readiness(tasks: Task[], states: Map<string, StateRef>, isStale:
   return out;
 }
 
-export function nightFinished(r: Map<string, Readiness>): boolean {
+export function runFinished(r: Map<string, Readiness>): boolean {
   return [...r.values()].every((x) => x === "done" || x === "parked" || x === "blocked");
 }
 
@@ -75,10 +75,10 @@ export function pickNext(opts: {
   states: Map<string, StateRef>;
   isStale: (s: StateRef) => boolean;
   me: NodeSpec;
-  cfg: NightConfig;
+  cfg: RelayConfig;
   localRunning: Set<string>;
   idleMs: number;
-  /** Path globs humans are working on during a day shift: treated as held leases. */
+  /** Path globs humans are editing right now: treated as held leases. */
   reserves?: string[][];
   /** Only demo-critical work (usage nearly spent, or close to the deadline). */
   mustOnly?: boolean;

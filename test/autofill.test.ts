@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { autofill, parseMemberLine, parseBrief } from "../src/autofill.js";
 import { Setup, saveSetup, loadSetup } from "../src/setup.js";
-import { loadNight, paths } from "../src/config.js";
+import { loadConfig, paths } from "../src/config.js";
 import { makeTeam } from "./helpers.js";
 
 const TEMPLATE = readFileSync(join(fileURLToPath(new URL(".", import.meta.url)), "..", "templates", "brief.md"), "utf8");
@@ -30,7 +30,7 @@ describe("autofill from a markdown brief (no AI)", () => {
       ["Teammate Three", "their-github", "windows", "claude", "backend"],
     ]);
     expect(s.rules).toMatchObject({ perComputer: 2, usageCap: 25, review: true, stealing: true, check: "npm test" });
-    expect(r.filled).toEqual(expect.arrayContaining(["event", "deadline", "idea", "demo", "team (3 people)", "overnight rules"]));
+    expect(r.filled).toEqual(expect.arrayContaining(["event", "deadline", "idea", "demo", "team (3 people)", "agent rules"]));
     expect(r.usedAI).toBe(false);
   });
 
@@ -89,7 +89,7 @@ NMC² wants better shift handoffs.
     writeFileSync(join(paths(root).dir, "brief.md"), TEMPLATE);
     saveSetup(root, r.setup);
     expect(loadSetup(root).rules.contractsOwner).toBe("teammate-two");
-    expect(loadNight(root).contract_lane).toBe("ai");
+    expect(loadConfig(root).contract_lane).toBe("ai");
     const idea = readFileSync(paths(root).idea, "utf8");
     expect(idea).toContain("## The team's original brief");
     expect(idea).not.toContain("<!--");

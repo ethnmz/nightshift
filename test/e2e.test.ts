@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { NightDaemon } from "../src/daemon.js";
+import { RelayDaemon } from "../src/daemon.js";
 import { FakeAdapter } from "../src/agents/fake.js";
 import { makeTeam, NODES } from "./helpers.js";
 
@@ -27,10 +27,10 @@ function baseTasks() {
 }
 
 const run4 = (team: ReturnType<typeof makeTeam>, adapters?: Record<string, FakeAdapter>) =>
-  NODES.map((n) => new NightDaemon({ root: team.clones[n.id], node: n.id, loopMs: 100, adapter: adapters?.[n.id] }));
+  NODES.map((n) => new RelayDaemon({ root: team.clones[n.id], node: n.id, loopMs: 100, adapter: adapters?.[n.id] }));
 
-describe("4-node night with the fake adapter", () => {
-  it("builds every task exactly once and merges all of it into the night branch", async () => {
+describe("4-computer run with the fake adapter", () => {
+  it("builds every task exactly once and merges all of it into the run branch", async () => {
     const team = makeTeam({
       tasks: [
         ...baseTasks(),
@@ -44,20 +44,20 @@ describe("4-node night with the fake adapter", () => {
     const daemons = run4(team);
     await Promise.all(daemons.map((d) => d.start()));
 
-    const log = team.git("log", "--format=%s", "night/2026-11-11");
+    const log = team.git("log", "--format=%s", "relay/2026-11-11");
     const merged = log.split("\n").filter((s) => /^[\w-]+: /.test(s)).map((s) => s.split(":")[0]);
     const expected = ["T0", ...Object.keys(LANES).flatMap((l) => [`${l}-1`, `${l}-2`]), "LEASE", "FLAKY", "REVIEWED"];
     expect(merged.sort()).toEqual(expected.sort()); // each exactly once
     expect(merged).not.toContain("BAD");
     expect(merged).not.toContain("AFTERBAD");
 
-    // Lease enforcement: the out-of-lease file never reached the night branch.
-    const tree = team.git("ls-tree", "-r", "--name-only", "night/2026-11-11");
+    // Lease enforcement: the out-of-lease file never reached the run branch.
+    const tree = team.git("ls-tree", "-r", "--name-only", "relay/2026-11-11");
     expect(tree).toContain("ai/x/ok.txt");
     expect(tree).not.toContain("web/1/hack.txt");
 
-    // Parked work is kept on a branch for the morning.
-    expect(team.git("branch", "--list", "ns/2026-11-11/BAD-a1")).toContain("BAD");
+    // Parked work is kept on a branch for review.
+    expect(team.git("branch", "--list", "relay-work/2026-11-11/BAD-a1")).toContain("BAD");
 
     // Board traffic: claims, done, parked, assumption, lease request — all structured.
     const board = readFileSync(team.board, "utf8");
@@ -76,22 +76,22 @@ describe("4-node night with the fake adapter", () => {
         { id: "SLOW", title: "Slow core task", lane: "core", lease: ["core/**"], fake: { sleep_ms: 30_000, writes: { "core/a.txt": "a" } } },
         { id: "W1", title: "web", lane: "frontend", lease: ["web/**"], fake: { writes: { "web/a.txt": "a" } } },
       ],
-      night: { limits: { task_minutes: 1, stuck_minutes: 1, stale_claim_minutes: 0.03, heartbeat_seconds: 0.5, command_timeout_seconds: 20, retries: 1 } },
+      config: { limits: { task_minutes: 1, stuck_minutes: 1, stale_claim_minutes: 0.03, heartbeat_seconds: 0.5, command_timeout_seconds: 20, retries: 1 } },
     });
     // Aditri's node claims SLOW, then "the Mac sleeps": we stop its heartbeat by killing the daemon.
-    const aditri = new NightDaemon({ root: team.clones.aditri, node: "aditri", loopMs: 100 });
+    const aditri = new RelayDaemon({ root: team.clones.aditri, node: "aditri", loopMs: 100 });
     const p = aditri.start();
     while (!aditri.running.has("SLOW")) await new Promise((r) => setTimeout(r, 50));
     aditri.stop("simulated crash");
     await p;
     // Make the takeover runner fast this time.
-    const others = NODES.filter((n) => n.id !== "aditri").map((n) => new NightDaemon({ root: team.clones[n.id], node: n.id, loopMs: 100 }));
+    const others = NODES.filter((n) => n.id !== "aditri").map((n) => new RelayDaemon({ root: team.clones[n.id], node: n.id, loopMs: 100 }));
     for (const d of others) {
       const slow = d.tasks.find((t) => t.id === "SLOW")!;
       slow.fake = { writes: { "core/a.txt": "a" } };
     }
     await Promise.all(others.map((d) => d.start()));
-    const tree = team.git("ls-tree", "-r", "--name-only", "night/2026-11-11");
+    const tree = team.git("ls-tree", "-r", "--name-only", "relay/2026-11-11");
     expect(tree).toContain("core/a.txt");
     const board = readFileSync(team.board, "utf8");
     expect(board).toMatch(/taking over from aditri/);
@@ -105,9 +105,9 @@ describe("4-node night with the fake adapter", () => {
       ],
       nodes: [NODES[0], NODES[3]],
     });
-    const ds = [new NightDaemon({ root: team.clones.ethan, node: "ethan", loopMs: 100 }), new NightDaemon({ root: team.clones.aditri, node: "aditri", loopMs: 100 })];
+    const ds = [new RelayDaemon({ root: team.clones.ethan, node: "ethan", loopMs: 100 }), new RelayDaemon({ root: team.clones.aditri, node: "aditri", loopMs: 100 })];
     await Promise.all(ds.map((d) => d.start()));
-    const inbox = team.git("show", "night/2026-11-11:web/inbox.txt");
+    const inbox = team.git("show", "relay/2026-11-11:web/inbox.txt");
     expect(inbox).toContain("API field renamed to owner_id");
   }, 60_000);
 
@@ -115,9 +115,9 @@ describe("4-node night with the fake adapter", () => {
     const team = makeTeam({
       tasks: [{ id: "HANG", title: "Hangs", lane: "core", lease: ["core/**"], fake: { stuck: true } }],
       nodes: [NODES[3]],
-      night: { limits: { task_minutes: 1, stuck_minutes: 0.02, stale_claim_minutes: 1, heartbeat_seconds: 0.5, command_timeout_seconds: 20, retries: 1 }, review: { enabled: false, max_rounds: 1 } },
+      config: { limits: { task_minutes: 1, stuck_minutes: 0.02, stale_claim_minutes: 1, heartbeat_seconds: 0.5, command_timeout_seconds: 20, retries: 1 }, review: { enabled: false, max_rounds: 1 } },
     });
-    const d = new NightDaemon({ root: team.clones.aditri, node: "aditri", loopMs: 100 });
+    const d = new RelayDaemon({ root: team.clones.aditri, node: "aditri", loopMs: 100 });
     const t0 = Date.now();
     await d.start();
     expect(Date.now() - t0).toBeLessThan(20_000);

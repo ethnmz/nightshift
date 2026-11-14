@@ -1,4 +1,4 @@
-# The overnight task DAG. `nightshift plan` writes this from idea.md; edit it before bed.
+# The task DAG for a run. `relay plan` writes this from idea.md; edit it before you start.
 # Tasks that may run at the same time must have non-overlapping leases.
 tasks:
   - id: T1

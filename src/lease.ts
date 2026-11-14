@@ -32,8 +32,8 @@ export function leasesOverlap(a: string[], b: string[]): boolean {
   return a.some((x) => b.some((y) => globsOverlap(x, y)));
 }
 
-/** Files outside the lease. `.nightshift/` bookkeeping is never allowed. */
+/** Files outside the lease. `.relay/` bookkeeping is never allowed. */
 export function leaseViolations(files: string[], lease: string[]): string[] {
   const isMatch = picomatch(lease, { dot: true });
-  return files.filter((f) => f.startsWith(".nightshift/") || !isMatch(f));
+  return files.filter((f) => f.startsWith(".relay/") || !isMatch(f));
 }

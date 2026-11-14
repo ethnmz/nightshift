@@ -1,19 +1,19 @@
-// Evening step: idea.md → contracts, stubs, fixtures and tasks.yaml. The team reviews the
-// result (dashboard or editor) before anyone starts the night.
+// Planning step: idea.md → contracts, stubs, fixtures and tasks.yaml. The team reviews the
+// result (dashboard or editor) before anyone starts the run.
 import { existsSync, readFileSync } from "node:fs";
 import YAML from "yaml";
-import { loadNight, paths, TaskFile, validateTasks, DEFAULT_ALLOW, KEY_ENV } from "./config.js";
+import { loadConfig, paths, TaskFile, validateTasks, DEFAULT_ALLOW, KEY_ENV } from "./config.js";
 import { CodexAdapter } from "./agents/codex.js";
 import { ClaudeAdapter } from "./agents/claude.js";
 import { prompt } from "./prompts.js";
-import type { NightshiftTools } from "./agents/types.js";
+import type { RelayTools } from "./agents/types.js";
 
 export async function plan(root: string, log: (s: string) => void = console.log, agent: "claude" | "codex" = "claude"): Promise<{ ok: boolean; tasks: number; cost: number; errors?: string }> {
-  const cfg = loadNight(root);
+  const cfg = loadConfig(root);
   const p = paths(root);
   if (!existsSync(p.idea)) throw new Error(`write the idea first: ${p.idea}`);
   const assumptions: string[] = [];
-  const tools: NightshiftTools = {
+  const tools: RelayTools = {
     post_note: async () => "noted",
     ask: async () => "No one to ask while planning. Decide, then record_assumption.",
     answer: async () => "ok",
@@ -38,11 +38,11 @@ export async function plan(root: string, log: (s: string) => void = console.log,
     const res = await adapter.run({
       role: "planner",
       cwd: root,
-      system: `You are planning an overnight build for ${cfg.project}. Humans are available only until the plan is approved; do not ask them anything during this run.`,
+      system: `You are planning a multi-agent build for ${cfg.project}. Humans are available only until the plan is approved; do not ask them anything during this run.`,
       prompt:
         round === 1
           ? prompt("planner", { node_count: cfg.nodes.length, nodes })
-          : `.nightshift/tasks.yaml is invalid:\n${errors}\nFix it (same schema) and keep everything else.`,
+          : `.relay/tasks.yaml is invalid:\n${errors}\nFix it (same schema) and keep everything else.`,
       model: agent === "claude" ? cfg.models.planner : undefined,
       removeEnv: cfg.auth === "subscription" ? KEY_ENV : [],
       maxTurns: 120,

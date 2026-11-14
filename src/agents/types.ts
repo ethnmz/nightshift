@@ -2,8 +2,8 @@ import type { Task } from "../config.js";
 
 export type Role = "builder" | "fixer" | "contract" | "reviewer" | "answerer" | "planner" | "writer";
 
-/** The tools every worker gets through the in-process `nightshift` MCP server. None of them asks a human. */
-export interface NightshiftTools {
+/** The tools every worker gets through the in-process `relay` MCP server. None of them asks a human. */
+export interface RelayTools {
   post_note(a: { to?: string; text: string }): Promise<string>;
   ask(a: { to: string; question: string }): Promise<string>;
   answer(a: { to: string; text: string; question_id?: string }): Promise<string>;
@@ -43,7 +43,7 @@ export interface AgentRequest {
   maxBudgetUsd?: number;
   allowCommands: string[];
   readOnly: boolean;
-  tools: NightshiftTools;
+  tools: RelayTools;
   /** Drains messages that arrived for this worker since the last call (board → worker). */
   inbox: () => string[];
   onEvent: (e: AgentEvent) => void;
